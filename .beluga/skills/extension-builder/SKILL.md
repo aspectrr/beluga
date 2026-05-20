@@ -148,6 +148,7 @@ func (t *MyTool) Execute(ctx context.Context, args json.RawMessage, tctx tools.T
 ## Extension Patterns
 
 ### Pattern 1: Connector + Tools
+
 For extensions that trigger sessions from external events AND provide tools.
 
 ```go
@@ -171,6 +172,7 @@ func (e *Extension) Start(ctx context.Context) error {
 ```
 
 ### Pattern 2: Tools Only
+
 No background process. Just registers tools.
 
 ```go
@@ -181,29 +183,37 @@ func (e *Extension) Start(ctx context.Context) error {
 ```
 
 ### Pattern 3: Sandbox Provider + Tools
+
 Creates specialized sandbox environments.
 
 ### Pattern 4: Host Provider + Tools
+
 Manages remote daemons. Requires `ext_host` for gRPC.
 
 ## The beluga extend Commands
 
 ### Scaffold a new extension:
+
 ```bash
 beluga extend create <name> --type local
 ```
+
 Creates: extension.go, tools.go, extension_test.go, config.yaml, README.md
 
 ### Verify an extension:
+
 ```bash
 beluga extend verify ./<name>
 ```
+
 Returns JSON: `{compiles, tests_pass, tools: [{name, schema_valid, dry_run}], errors}`
 
 ### Install an extension:
+
 ```bash
 beluga extend install ./<name>
 ```
+
 Copies into internal/extensions/, rebuilds, prints restart instructions.
 
 ## Config
@@ -219,6 +229,7 @@ extensions:
 ```
 
 Access in Init():
+
 ```go
 var cfg struct {
     APIToken string `json:"api_token"`

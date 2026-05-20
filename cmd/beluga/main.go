@@ -26,6 +26,11 @@ import (
 	"github.com/collinpfeifer/beluga/internal/core/session"
 	"github.com/collinpfeifer/beluga/internal/core/tools"
 	"github.com/collinpfeifer/beluga/internal/core/workspace"
+	"github.com/collinpfeifer/beluga/internal/extensions/clickup"
+	"github.com/collinpfeifer/beluga/internal/extensions/evolving_skills"
+	"github.com/collinpfeifer/beluga/internal/extensions/github"
+	"github.com/collinpfeifer/beluga/internal/extensions/pipeline"
+	"github.com/collinpfeifer/beluga/internal/extensions/searchable_history"
 )
 
 const defaultSystemPrompt = `You are Beluga, a managed agent. You work in a sandboxed workspace where you can read and write files and execute commands.
@@ -468,10 +473,20 @@ func assembleSystemPrompt(systemPath, promptsDir string) (string, error) {
 // Returns nil if no extension with that name is compiled in.
 // Extensions are added here as they are implemented in later phases.
 func lookupBuiltinExtension(name string) extension.Extension {
-	// Phase 1: no built-in extensions.
-	// Phase 3 will add: clickup, github, pipeline, evolving_skills, searchable_history
-	// Phase 4 will add: ext_host, remora
-	return nil
+	switch name {
+	case "evolving_skills":
+		return &evolving_skills.Extension{}
+	case "searchable_history":
+		return &searchable_history.Extension{}
+	case "clickup":
+		return &clickup.Extension{}
+	case "github":
+		return &github.Extension{}
+	case "pipeline":
+		return &pipeline.Extension{}
+	default:
+		return nil
+	}
 }
 
 // mustJSON marshals v to JSON, returning an empty object on error.
