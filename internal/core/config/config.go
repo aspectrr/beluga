@@ -37,6 +37,11 @@ type DatabaseConfig struct {
 	Password       string `yaml:"password"`
 	SSLMode        string `yaml:"sslmode"`
 	MaxConnections int    `yaml:"max_connections"`
+
+	// ExtRolePassword is the password for the restricted beluga_ext role
+	// used by extension DB access. If empty, extensions use the main pool
+	// with Go-level restrictions only (no PostgreSQL role isolation).
+	ExtRolePassword string `yaml:"ext_role_password"`
 }
 
 // DSN returns the PostgreSQL connection string.
@@ -108,6 +113,9 @@ func LoadConfig(path string) (*Config, error) {
 	}
 	if v := os.Getenv("BELUGA_DB_PASSWORD"); v != "" {
 		cfg.Database.Password = v
+	}
+	if v := os.Getenv("BELUGA_DB_EXT_ROLE_PASSWORD"); v != "" {
+		cfg.Database.ExtRolePassword = v
 	}
 
 	// Apply defaults.

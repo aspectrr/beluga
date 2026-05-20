@@ -261,7 +261,7 @@ func runStart(configPath, belugaDir string) {
 		Registry:      registry,
 		Sessions:      sessions,
 		Events:        events,
-		DB:            pool,
+		DB:            nil, // set per-extension below
 		Docker:        nil, // workspace manager available via adapter if needed
 		Logger:        logger,
 		PromptDir:     promptDir,
@@ -269,12 +269,18 @@ func runStart(configPath, belugaDir string) {
 	}
 
 	// Register enabled extensions with their configs.
-	// Extensions are discovered from internal/extensions/ at build time.
-	// Use `beluga extend install` to add new extensions.
+	// Each extension gets its own restricted ExtDB handle.
 	for _, name := range cfg.EnabledExtensions() {
 		rawCfg := cfg.ExtensionRawConfig(name)
 		extCtxCopy := extCtx
 		extCtxCopy.Config = rawCfg
+
+		// Create a restricted database handle for this extension.
+		extDB := database.NewExtDB(pool, name, database.DefaultExtPermissions(name))
+		if err := extDB.EnsureSchema(ctx); err != nil {
+			logger.Warn("could not create extension schema", "name", name, "error", err)
+		}
+		extCtxCopy.DB = extDB
 
 		// Look up the extension in the registry.
 		if ext := lookupExtension(name); ext != nil {

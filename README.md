@@ -4,10 +4,6 @@
 
 Beluga is a framework for building managed agents — autonomous agents that run in sandboxed workspaces, can be extended with new capabilities, and compound their knowledge over time. Agents can build and install their own extensions.
 
-## Quick Links
-
-- [PRD & Architecture](PRD.md) — full design document with primitives, extension patterns, and directory structure
-
 ## Core Concepts
 
 | Primitive     | What it does                                             |
@@ -28,7 +24,3 @@ Extensions add domain-specific capabilities. Each can provide:
 - **Host Provider** — connects to remote daemons on other machines
 
 Agents build their own extensions using `beluga extend create|verify|install`.
-
-## Status
-
-Early design phase. See [PRD.md](PRD.md) for the full architecture.

@@ -34,4 +34,5 @@ go.work.sum
 .pi-lens
 .task-*
 beluga
+.beluga
 /remora

@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"log/slog"
 
+	"github.com/collinpfeifer/beluga/internal/core/database"
 	"github.com/collinpfeifer/beluga/internal/core/eventstore"
 	"github.com/collinpfeifer/beluga/internal/core/model"
 	"github.com/collinpfeifer/beluga/internal/core/session"
 	"github.com/collinpfeifer/beluga/internal/core/tools"
-	"github.com/jackc/pgx/v5/pgxpool"
 )
 
 // Extension is the interface all extensions implement.
@@ -42,7 +42,7 @@ type ExtensionContext struct {
 	Registry *tools.Registry   // Register tools here
 	Sessions *session.Store    // Create/query sessions
 	Events   *eventstore.Store // Append/query events
-	DB       *pgxpool.Pool     // Direct database access for custom queries/migrations
+	DB       *database.ExtDB   // Restricted database access — see database.ExtPermissions
 	Docker   interface{}       // *client.Client — use interface{} to avoid docker import
 	Logger   *slog.Logger
 
