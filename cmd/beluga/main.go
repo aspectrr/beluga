@@ -26,10 +26,6 @@ import (
 	"github.com/collinpfeifer/beluga/internal/core/session"
 	"github.com/collinpfeifer/beluga/internal/core/tools"
 	"github.com/collinpfeifer/beluga/internal/core/workspace"
-	"github.com/collinpfeifer/beluga/internal/extensions/evolving_skills"
-	"github.com/collinpfeifer/beluga/internal/extensions/ext_host"
-	"github.com/collinpfeifer/beluga/internal/extensions/remora"
-	"github.com/collinpfeifer/beluga/internal/extensions/searchable_history"
 )
 
 const defaultSystemPrompt = `You are Beluga, a managed agent. You work in a sandboxed workspace where you can read and write files and execute commands.
@@ -260,10 +256,6 @@ func runStart(configPath, belugaDir string) {
 	// ── Extension manager ─────────────────────────────────────
 	extMgr := extension.NewManager(logger)
 
-	// Shared GRPCProvider pointer. ext_host sets this during Init().
-	// Later extensions (like remora) read it from their ExtensionContext.GRPC.
-	var grpcProvider *ext_host.GRPCProvider
-
 	// Build the shared extension context template.
 	extCtx := extension.ExtensionContext{
 		Registry:      registry,
@@ -273,19 +265,19 @@ func runStart(configPath, belugaDir string) {
 		Docker:        nil, // workspace manager available via adapter if needed
 		Logger:        logger,
 		PromptDir:     promptDir,
-		GRPC:          &grpcProvider, // ext_host sets *grpcProvider during Init()
 		CreateSession: orchestratorInst.HandleNewSession,
 	}
 
 	// Register enabled extensions with their configs.
-	// Phase 1 has no built-in extensions — this wires the infrastructure.
+	// Extensions are discovered from internal/extensions/ at build time.
+	// Use `beluga extend install` to add new extensions.
 	for _, name := range cfg.EnabledExtensions() {
 		rawCfg := cfg.ExtensionRawConfig(name)
 		extCtxCopy := extCtx
 		extCtxCopy.Config = rawCfg
 
-		// Look up the extension in the built-in registry.
-		if ext := lookupBuiltinExtension(name); ext != nil {
+		// Look up the extension in the registry.
+		if ext := lookupExtension(name); ext != nil {
 			extMgr.Register(ext, extCtxCopy)
 		} else {
 			logger.Warn("unknown extension, skipping", "name", name)
@@ -472,22 +464,19 @@ func assembleSystemPrompt(systemPath, promptsDir string) (string, error) {
 	return prompt, nil
 }
 
-// lookupBuiltinExtension returns a built-in extension by name.
-// Returns nil if no extension with that name is compiled in.
-// Extensions are added here as they are implemented in later phases.
-func lookupBuiltinExtension(name string) extension.Extension {
-	switch name {
-	case "evolving_skills":
-		return &evolving_skills.Extension{}
-	case "searchable_history":
-		return &searchable_history.Extension{}
-	case "ext_host":
-		return &ext_host.Extension{}
-	case "remora":
-		return &remora.Extension{}
-	default:
-		return nil
-	}
+// lookupExtension returns an extension by name from the compiled-in registry.
+// Extensions are registered here when installed via `beluga extend install`.
+// When no extensions are installed, this always returns nil.
+func lookupExtension(name string) extension.Extension {
+	// Extensions are discovered at build time. When `beluga extend install`
+	// copies an extension into internal/extensions/{name}/, it also generates
+	// an import and case here. With no extensions installed, this returns nil.
+	//
+	// Example (after `beluga extend install clickup`):
+	//   import "github.com/collinpfeifer/beluga/internal/extensions/clickup"
+	//   case "clickup": return &clickup.Extension{}
+	_ = name
+	return nil
 }
 
 // mustJSON marshals v to JSON, returning an empty object on error.

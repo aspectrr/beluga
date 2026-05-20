@@ -17,3 +17,6 @@ type ToolContext = internal.ToolContext
 
 // SandboxRunner is the interface for workspace sandbox operations.
 type SandboxRunner = internal.SandboxRunner
+
+// Registry manages tool registration and dispatch.
+type Registry = internal.Registry

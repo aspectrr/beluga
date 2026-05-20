@@ -32,3 +32,13 @@ const (
 	EventTypeError            = internal.EventTypeError
 	EventTypeCompacted        = internal.EventTypeCompacted
 )
+
+// Payload types for event data.
+type UserMessagePayload = internal.UserMessagePayload
+type AgentMessagePayload = internal.AgentMessagePayload
+type ToolCallPayload = internal.ToolCallPayload
+type ToolResultPayload = internal.ToolResultPayload
+type InterruptPayload = internal.InterruptPayload
+type StatusTransitionPayload = internal.StatusTransitionPayload
+type ErrorPayload = internal.ErrorPayload
+type CompactedPayload = internal.CompactedPayload
