@@ -1,4 +1,4 @@
-// beluga is the main Beluga daemon.
+// beluga is the main Beluga daemon and CLI.
 // It manages agent sessions, Docker sandbox workspaces, and orchestrates
 // the agent runtime. Extensions add capabilities like connectors and tools.
 package main
@@ -17,6 +17,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/collinpfeifer/beluga/internal/cli/extend"
 	"github.com/collinpfeifer/beluga/internal/core/agent"
 	"github.com/collinpfeifer/beluga/internal/core/config"
 	"github.com/collinpfeifer/beluga/internal/core/database"
@@ -33,10 +34,109 @@ Be thorough but concise. Always explain what you're doing and why.
 `
 
 func main() {
-	configPath := flag.String("config", "configs/beluga.yaml", "path to config file")
-	belugaDir := flag.String("beluga-dir", ".beluga", "path to .beluga directory")
-	flag.Parse()
+	if len(os.Args) < 2 {
+		printUsage()
+		os.Exit(1)
+	}
 
+	switch os.Args[1] {
+	case "start":
+		fs := flag.NewFlagSet("start", flag.ExitOnError)
+		configPath := fs.String("config", "configs/beluga.yaml", "path to config file")
+		belugaDir := fs.String("beluga-dir", ".beluga", "path to .beluga directory")
+		fs.Parse(os.Args[2:])
+		runStart(*configPath, *belugaDir)
+
+	case "onboard":
+		fs := flag.NewFlagSet("onboard", flag.ExitOnError)
+		configPath := fs.String("config", "configs/beluga.yaml", "path to config file")
+		fs.Parse(os.Args[2:])
+		runOnboard(*configPath)
+
+	case "status":
+		fs := flag.NewFlagSet("status", flag.ExitOnError)
+		configPath := fs.String("config", "configs/beluga.yaml", "path to config file")
+		fs.Parse(os.Args[2:])
+		runStatus(*configPath)
+
+	case "extend":
+		if len(os.Args) < 3 {
+			fmt.Fprintln(os.Stderr, "Usage: beluga extend <create|verify|install> [args]")
+			fmt.Fprintln(os.Stderr)
+			fmt.Fprintln(os.Stderr, "Subcommands:")
+			fmt.Fprintln(os.Stderr, "  create <name> [--type local|remote]  Scaffold a new extension")
+			fmt.Fprintln(os.Stderr, "  verify <path>                        Compile, test, validate tool schemas")
+			fmt.Fprintln(os.Stderr, "  install <path>                       Install extension (rebuild + restart)")
+			os.Exit(1)
+		}
+		switch os.Args[2] {
+		case "create":
+			fs := flag.NewFlagSet("extend create", flag.ExitOnError)
+			extType := fs.String("type", "local", "extension type: local or remote")
+			fs.Parse(os.Args[3:])
+			if fs.NArg() < 1 {
+				fmt.Fprintln(os.Stderr, "Usage: beluga extend create <name> [--type local|remote]")
+				os.Exit(1)
+			}
+			runExtendCreate(fs.Arg(0), *extType)
+
+		case "verify":
+			fs := flag.NewFlagSet("extend verify", flag.ExitOnError)
+			fs.Parse(os.Args[3:])
+			if fs.NArg() < 1 {
+				fmt.Fprintln(os.Stderr, "Usage: beluga extend verify <path>")
+				os.Exit(1)
+			}
+			runExtendVerify(fs.Arg(0))
+
+		case "install":
+			fs := flag.NewFlagSet("extend install", flag.ExitOnError)
+			fs.Parse(os.Args[3:])
+			if fs.NArg() < 1 {
+				fmt.Fprintln(os.Stderr, "Usage: beluga extend install <path>")
+				os.Exit(1)
+			}
+			runExtendInstall(fs.Arg(0))
+
+		default:
+			fmt.Fprintf(os.Stderr, "Unknown extend subcommand: %s\n", os.Args[2])
+			fmt.Fprintln(os.Stderr, "Available: create, verify, install")
+			os.Exit(1)
+		}
+
+	case "help", "--help", "-h":
+		printUsage()
+
+	default:
+		fmt.Fprintf(os.Stderr, "Unknown command: %s\n", os.Args[1])
+		fmt.Fprintln(os.Stderr)
+		printUsage()
+		os.Exit(1)
+	}
+}
+
+func printUsage() {
+	fmt.Fprintln(os.Stderr, "Beluga — Managed Agents that grow with you.")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Usage:")
+	fmt.Fprintln(os.Stderr, "  beluga <command> [options]")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Commands:")
+	fmt.Fprintln(os.Stderr, "  onboard                    Onboard Beluga (LLM setup, connector setup)")
+	fmt.Fprintln(os.Stderr, "  start                      Start the daemon")
+	fmt.Fprintln(os.Stderr, "  status                     Show running sessions, extensions, connected hosts")
+	fmt.Fprintln(os.Stderr, "  extend create <name>       Scaffold a new extension")
+	fmt.Fprintln(os.Stderr, "  extend verify <path>       Compile, test, validate tool schemas")
+	fmt.Fprintln(os.Stderr, "  extend install <path>      Install extension (rebuild + restart)")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Run 'beluga <command> --help' for more information on a command.")
+}
+
+// ─── start ────────────────────────────────────────────────────────
+
+// runStart starts the Beluga daemon. This is the full startup sequence
+// from Phase 1: database, stores, tools, workspace, extensions, agent loop.
+func runStart(configPath, belugaDir string) {
 	// Setup structured JSON logger.
 	logger := slog.New(slog.NewJSONHandler(os.Stdout, &slog.HandlerOptions{
 		Level: slog.LevelInfo,
@@ -49,7 +149,7 @@ func main() {
 	defer cancel()
 
 	// ── Load config ───────────────────────────────────────────
-	cfg, err := config.LoadConfig(*configPath)
+	cfg, err := config.LoadConfig(configPath)
 	if err != nil {
 		logger.Error("failed to load config", "error", err)
 		os.Exit(1)
@@ -91,9 +191,9 @@ func main() {
 	}
 
 	// ── .beluga/ directory setup ──────────────────────────────
-	promptDir := filepath.Join(*belugaDir, "prompts")
-	skillsDir := filepath.Join(*belugaDir, "skills")
-	systemPromptPath := filepath.Join(*belugaDir, "SYSTEM.md")
+	promptDir := filepath.Join(belugaDir, "prompts")
+	skillsDir := filepath.Join(belugaDir, "skills")
+	systemPromptPath := filepath.Join(belugaDir, "SYSTEM.md")
 
 	os.MkdirAll(promptDir, 0o755)
 	os.MkdirAll(skillsDir, 0o755)
@@ -151,12 +251,6 @@ func main() {
 	}
 	orchestratorInst.SetTools(orchTools)
 
-	if cfg.Agent.MaxContextTokens > 0 {
-		// The context builder is internal to the orchestrator, so we set
-		// max tokens via the agent config. For now this is wired through
-		// the context builder's default of 128000.
-	}
-
 	logger.Info("tools registered", "count", len(registryDefs))
 
 	// ── Extension manager ─────────────────────────────────────
@@ -183,7 +277,6 @@ func main() {
 		extCtxCopy.Config = rawCfg
 
 		// Look up the extension in the built-in registry.
-		// In Phase 1 there are none, so this is a no-op placeholder.
 		if ext := lookupBuiltinExtension(name); ext != nil {
 			extMgr.Register(ext, extCtxCopy)
 		} else {
@@ -262,6 +355,86 @@ func main() {
 	logger.Info("beluga shutdown complete")
 }
 
+// ─── onboard ──────────────────────────────────────────────────────
+
+func runOnboard(configPath string) {
+	fmt.Fprintln(os.Stderr, "onboard: not yet implemented")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Onboarding will guide you through:")
+	fmt.Fprintln(os.Stderr, "  1. LLM endpoint + API key setup")
+	fmt.Fprintln(os.Stderr, "  2. Embedding model detection (optional)")
+	fmt.Fprintln(os.Stderr, "  3. Chat connector selection")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintf(os.Stderr, "Config will be written to %s\n", configPath)
+	os.Exit(1)
+}
+
+// ─── status ───────────────────────────────────────────────────────
+
+func runStatus(configPath string) {
+	fmt.Fprintln(os.Stderr, "status: not yet implemented")
+	fmt.Fprintln(os.Stderr)
+	fmt.Fprintln(os.Stderr, "Status will show:")
+	fmt.Fprintln(os.Stderr, "  - Running sessions")
+	fmt.Fprintln(os.Stderr, "  - Active extensions")
+	fmt.Fprintln(os.Stderr, "  - Connected hosts")
+	fmt.Fprintln(os.Stderr, "  - Workspace sandboxes")
+	os.Exit(1)
+}
+
+// ─── extend create ────────────────────────────────────────────────
+
+func runExtendCreate(name, extType string) {
+	cfg := extend.ScaffoldConfig{
+		Name:   name,
+		Type:   extType,
+		OutDir: ".",
+	}
+	if err := extend.Scaffold(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+	fmt.Fprintf(os.Stderr, "Extension '%s' scaffolded in ./%s/\n", name, name)
+	fmt.Fprintf(os.Stderr, "Next steps:\n")
+	fmt.Fprintf(os.Stderr, "  1. Edit the tools and logic in ./%s/\n", name)
+	fmt.Fprintf(os.Stderr, "  2. Verify: beluga extend verify ./%s\n", name)
+	fmt.Fprintf(os.Stderr, "  3. Install: beluga extend install ./%s\n", name)
+}
+
+// ─── extend verify ────────────────────────────────────────────────
+
+func runExtendVerify(path string) {
+	result, err := extend.Verify(path)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	if err := extend.PrintVerifyResult(result); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+
+	// Exit with non-zero if verification failed.
+	if !result.Compiles || !result.TestsPass {
+		os.Exit(1)
+	}
+}
+
+// ─── extend install ───────────────────────────────────────────────
+
+func runExtendInstall(path string) {
+	cfg := extend.InstallConfig{
+		Path: path,
+	}
+	if err := extend.Install(cfg); err != nil {
+		fmt.Fprintf(os.Stderr, "error: %v\n", err)
+		os.Exit(1)
+	}
+}
+
+// ─── Shared helpers ───────────────────────────────────────────────
+
 // assembleSystemPrompt reads SYSTEM.md and appends any prompt templates from .beluga/prompts/.
 func assembleSystemPrompt(systemPath, promptsDir string) (string, error) {
 	data, err := os.ReadFile(systemPath)
@@ -310,7 +483,7 @@ func mustJSON(v interface{}) json.RawMessage {
 	return json.RawMessage(data)
 }
 
-// ── Adapter types ────────────────────────────────────────────
+// ── Adapter types ─────────────────────────────────────────────────
 
 // toolExecutorAdapter adapts tools.Registry to agent.ToolExecutor.
 // It looks up the sandbox for the session from the workspace manager
