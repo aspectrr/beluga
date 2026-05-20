@@ -28,8 +28,10 @@ import (
 	"github.com/collinpfeifer/beluga/internal/core/workspace"
 	"github.com/collinpfeifer/beluga/internal/extensions/clickup"
 	"github.com/collinpfeifer/beluga/internal/extensions/evolving_skills"
+	"github.com/collinpfeifer/beluga/internal/extensions/ext_host"
 	"github.com/collinpfeifer/beluga/internal/extensions/github"
 	"github.com/collinpfeifer/beluga/internal/extensions/pipeline"
+	"github.com/collinpfeifer/beluga/internal/extensions/remora"
 	"github.com/collinpfeifer/beluga/internal/extensions/searchable_history"
 )
 
@@ -261,6 +263,10 @@ func runStart(configPath, belugaDir string) {
 	// ── Extension manager ─────────────────────────────────────
 	extMgr := extension.NewManager(logger)
 
+	// Shared GRPCProvider pointer. ext_host sets this during Init().
+	// Later extensions (like remora) read it from their ExtensionContext.GRPC.
+	var grpcProvider *ext_host.GRPCProvider
+
 	// Build the shared extension context template.
 	extCtx := extension.ExtensionContext{
 		Registry:      registry,
@@ -270,7 +276,7 @@ func runStart(configPath, belugaDir string) {
 		Docker:        nil, // workspace manager available via adapter if needed
 		Logger:        logger,
 		PromptDir:     promptDir,
-		GRPC:          nil, // set by ext_host extension if enabled
+		GRPC:          &grpcProvider, // ext_host sets *grpcProvider during Init()
 		CreateSession: orchestratorInst.HandleNewSession,
 	}
 
@@ -482,8 +488,12 @@ func lookupBuiltinExtension(name string) extension.Extension {
 		return &clickup.Extension{}
 	case "github":
 		return &github.Extension{}
+	case "ext_host":
+		return &ext_host.Extension{}
 	case "pipeline":
 		return &pipeline.Extension{}
+	case "remora":
+		return &remora.Extension{}
 	default:
 		return nil
 	}

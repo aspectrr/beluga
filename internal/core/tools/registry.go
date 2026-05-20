@@ -105,3 +105,11 @@ func (r *Registry) Execute(ctx context.Context, name string, args json.RawMessag
 
 	return tool.Execute(ctx, args, tctx)
 }
+
+// Unregister removes a tool from the registry by name.
+// Used when a remote extension disconnects and its tools need to be cleaned up.
+func (r *Registry) Unregister(name string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	delete(r.tools, name)
+}
