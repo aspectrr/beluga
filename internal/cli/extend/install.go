@@ -10,33 +10,44 @@ import (
 
 // InstallConfig holds options for installing an extension.
 type InstallConfig struct {
-	Path      string // path to extension directory
+	Source    string // path or git URL of the extension
 	Type      string // "local" or "remote" (auto-detected if empty)
 	BelugaDir string // project root directory (where go.mod lives)
 }
 
 // Install installs the extension into the Beluga project.
 func Install(cfg InstallConfig) error {
-	absPath, err := filepath.Abs(cfg.Path)
-	if err != nil {
-		return fmt.Errorf("resolving path: %w", err)
-	}
-
-	if _, err := os.Stat(absPath); os.IsNotExist(err) {
-		return fmt.Errorf("extension directory %s does not exist", absPath)
-	}
-
-	// Auto-detect type if not specified.
-	if cfg.Type == "" {
-		cfg.Type = detectType(absPath)
-	}
-
-	// Find the Beluga project root (directory with go.mod).
+	// Find the Beluga project root first.
 	if cfg.BelugaDir == "" {
 		cfg.BelugaDir = findProjectRoot()
 	}
 	if cfg.BelugaDir == "" {
 		return fmt.Errorf("cannot find Beluga project root (no go.mod found in parent directories)")
+	}
+
+	// Determine if source is a git URL or a local path.
+	var absPath string
+	var err error
+
+	if isGitURL(cfg.Source) {
+		absPath, err = cloneExtension(cfg.Source, cfg.BelugaDir)
+		if err != nil {
+			return fmt.Errorf("cloning extension: %w", err)
+		}
+		defer os.RemoveAll(filepath.Dir(absPath)) // clean up temp clone
+	} else {
+		absPath, err = filepath.Abs(cfg.Source)
+		if err != nil {
+			return fmt.Errorf("resolving path: %w", err)
+		}
+		if _, err := os.Stat(absPath); os.IsNotExist(err) {
+			return fmt.Errorf("extension directory %s does not exist", absPath)
+		}
+	}
+
+	// Auto-detect type if not specified.
+	if cfg.Type == "" {
+		cfg.Type = detectType(absPath)
 	}
 
 	name := filepath.Base(absPath)
@@ -49,6 +60,30 @@ func Install(cfg InstallConfig) error {
 	default:
 		return fmt.Errorf("unknown extension type %q", cfg.Type)
 	}
+}
+
+// isGitURL checks if the source looks like a git URL.
+func isGitURL(source string) bool {
+	return strings.HasPrefix(source, "https://github.com/") ||
+		strings.HasPrefix(source, "git@github.com:") ||
+		strings.HasPrefix(source, "https://gitlab.com/") ||
+		strings.HasSuffix(source, ".git")
+}
+
+// cloneExtension clones a git repo into a temp directory and returns the path.
+func cloneExtension(gitURL, projectRoot string) (string, error) {
+	tmpDir, err := os.MkdirTemp("", "beluga-ext-")
+	if err != nil {
+		return "", fmt.Errorf("creating temp dir: %w", err)
+	}
+
+	cmd := exec.Command("git", "clone", gitURL, tmpDir)
+	cmd.Stderr = os.Stderr
+	if err := cmd.Run(); err != nil {
+		return "", fmt.Errorf("git clone failed: %w", err)
+	}
+
+	return tmpDir, nil
 }
 
 // detectType determines whether the extension is local or remote

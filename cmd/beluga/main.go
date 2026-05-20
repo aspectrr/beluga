@@ -26,11 +26,8 @@ import (
 	"github.com/collinpfeifer/beluga/internal/core/session"
 	"github.com/collinpfeifer/beluga/internal/core/tools"
 	"github.com/collinpfeifer/beluga/internal/core/workspace"
-	"github.com/collinpfeifer/beluga/internal/extensions/clickup"
 	"github.com/collinpfeifer/beluga/internal/extensions/evolving_skills"
 	"github.com/collinpfeifer/beluga/internal/extensions/ext_host"
-	"github.com/collinpfeifer/beluga/internal/extensions/github"
-	"github.com/collinpfeifer/beluga/internal/extensions/pipeline"
 	"github.com/collinpfeifer/beluga/internal/extensions/remora"
 	"github.com/collinpfeifer/beluga/internal/extensions/searchable_history"
 )
@@ -73,7 +70,7 @@ func main() {
 			fmt.Fprintln(os.Stderr, "Subcommands:")
 			fmt.Fprintln(os.Stderr, "  create <name> [--type local|remote]  Scaffold a new extension")
 			fmt.Fprintln(os.Stderr, "  verify <path>                        Compile, test, validate tool schemas")
-			fmt.Fprintln(os.Stderr, "  install <path>                       Install extension (rebuild + restart)")
+			fmt.Fprintln(os.Stderr, "  install <path-or-url>                 Install extension (rebuild + restart)")
 			os.Exit(1)
 		}
 		switch os.Args[2] {
@@ -434,9 +431,9 @@ func runExtendVerify(path string) {
 
 // ─── extend install ───────────────────────────────────────────────
 
-func runExtendInstall(path string) {
+func runExtendInstall(source string) {
 	cfg := extend.InstallConfig{
-		Path: path,
+		Source: source,
 	}
 	if err := extend.Install(cfg); err != nil {
 		fmt.Fprintf(os.Stderr, "error: %v\n", err)
@@ -484,14 +481,8 @@ func lookupBuiltinExtension(name string) extension.Extension {
 		return &evolving_skills.Extension{}
 	case "searchable_history":
 		return &searchable_history.Extension{}
-	case "clickup":
-		return &clickup.Extension{}
-	case "github":
-		return &github.Extension{}
 	case "ext_host":
 		return &ext_host.Extension{}
-	case "pipeline":
-		return &pipeline.Extension{}
 	case "remora":
 		return &remora.Extension{}
 	default:
