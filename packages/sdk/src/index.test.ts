@@ -37,7 +37,10 @@ class EchoTool implements Tool {
 		};
 	}
 
-	async execute(args: Record<string, unknown>, _ctx: ToolContext): Promise<Record<string, unknown>> {
+	async execute(
+		args: Record<string, unknown>,
+		_ctx: ToolContext,
+	): Promise<Record<string, unknown>> {
 		return { echo: args.message };
 	}
 }
@@ -61,7 +64,9 @@ describe("Registry", () => {
 			definition(): ToolDef {
 				return { name: "ping", description: "ping", parameters: {} };
 			}
-			async execute() { return { pong: true }; }
+			async execute() {
+				return { pong: true };
+			}
 		}
 		registry.register(new PingTool());
 
@@ -84,15 +89,25 @@ describe("Registry", () => {
 		const registry = new Registry();
 		registry.register(new EchoTool());
 
-		const ctx: ToolContext = { sessionId: "test", sandbox: null, eventStore: null };
+		const ctx: ToolContext = {
+			sessionId: "test",
+			sandbox: null,
+			eventStore: null,
+		};
 		const result = await registry.execute("echo", { message: "hello" }, ctx);
 		expect(result).toEqual({ echo: "hello" });
 	});
 
 	test("execute throws for unknown tool", async () => {
 		const registry = new Registry();
-		const ctx: ToolContext = { sessionId: "test", sandbox: null, eventStore: null };
-		expect(registry.execute("missing", {}, ctx)).rejects.toThrow("unknown tool: missing");
+		const ctx: ToolContext = {
+			sessionId: "test",
+			sandbox: null,
+			eventStore: null,
+		};
+		expect(registry.execute("missing", {}, ctx)).rejects.toThrow(
+			"unknown tool: missing",
+		);
 	});
 });
 
@@ -109,7 +124,11 @@ describe("toLLMTools", () => {
 		expect(llm).toHaveLength(2);
 		expect(llm[0]).toEqual({
 			type: "function",
-			function: { name: "a", description: "tool a", parameters: { type: "object" } },
+			function: {
+				name: "a",
+				description: "tool a",
+				parameters: { type: "object" },
+			},
 		});
 	});
 });
@@ -195,7 +214,10 @@ describe("Extension interface", () => {
 		ctx.shared["grpcProvider"] = { start: async () => {}, stop: () => {} };
 
 		// Simulate remora reading
-		const provider = ctx.shared["grpcProvider"] as { start: () => Promise<void>; stop: () => void };
+		const provider = ctx.shared["grpcProvider"] as {
+			start: () => Promise<void>;
+			stop: () => void;
+		};
 		expect(provider).toBeDefined();
 		expect(typeof provider.stop).toBe("function");
 	});
