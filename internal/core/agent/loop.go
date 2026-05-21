@@ -6,9 +6,9 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/collinpfeifer/beluga/internal/core/eventstore"
-	"github.com/collinpfeifer/beluga/internal/core/model"
-	"github.com/collinpfeifer/beluga/internal/core/session"
+	"github.com/aspectrr/beluga/internal/core/eventstore"
+	"github.com/aspectrr/beluga/internal/core/model"
+	"github.com/aspectrr/beluga/internal/core/session"
 )
 
 // ToolExecutor is the interface for executing tools in the agent loop.

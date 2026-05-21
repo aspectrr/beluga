@@ -5,7 +5,7 @@
 package tools
 
 import (
-	"github.com/collinpfeifer/beluga/internal/core/tools"
+	"github.com/aspectrr/beluga/internal/core/tools"
 )
 
 // Tool is the interface that all agent tools must implement.

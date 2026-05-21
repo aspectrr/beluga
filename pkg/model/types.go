@@ -3,7 +3,7 @@
 package model
 
 import (
-	internal "github.com/collinpfeifer/beluga/internal/core/model"
+	internal "github.com/aspectrr/beluga/internal/core/model"
 )
 
 // Session represents a durable agent session.

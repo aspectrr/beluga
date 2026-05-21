@@ -7,11 +7,11 @@ import (
 	"encoding/json"
 	"log/slog"
 
-	"github.com/collinpfeifer/beluga/internal/core/database"
-	"github.com/collinpfeifer/beluga/internal/core/eventstore"
-	"github.com/collinpfeifer/beluga/internal/core/model"
-	"github.com/collinpfeifer/beluga/internal/core/session"
-	"github.com/collinpfeifer/beluga/internal/core/tools"
+	"github.com/aspectrr/beluga/internal/core/database"
+	"github.com/aspectrr/beluga/internal/core/eventstore"
+	"github.com/aspectrr/beluga/internal/core/model"
+	"github.com/aspectrr/beluga/internal/core/session"
+	"github.com/aspectrr/beluga/internal/core/tools"
 )
 
 // Extension is the interface all extensions implement.

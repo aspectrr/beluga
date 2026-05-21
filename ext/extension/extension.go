@@ -6,7 +6,7 @@
 package extension
 
 import (
-	"github.com/collinpfeifer/beluga/internal/core/extension"
+	"github.com/aspectrr/beluga/internal/core/extension"
 )
 
 // Extension is the interface all extensions implement.

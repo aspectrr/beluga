@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/collinpfeifer/beluga/internal/core/eventstore"
+	"github.com/aspectrr/beluga/internal/core/eventstore"
 )
 
 // SandboxRunner is the interface that workspace sandboxes must satisfy.

@@ -1,0 +1,73 @@
+# ── Beluga Local Environment ────────────────────────────────────
+# Boots the Beluga stack locally for development:
+#   - PostgreSQL + pgvector (session/event store)
+#   - Beluga daemon (agent orchestrator, workspace manager)
+#
+# Prerequisites:
+#   1. Start everything:  docker compose up -d
+#   2. Run migrations:    make migrate-up
+#   3. Stop everything:   docker compose down
+#
+# Beluga exposes HTTP on :8080 (health, webhooks).
+# The daemon mounts the Docker socket so it can create agent
+# workspace sandboxes as sibling containers on the host daemon.
+#
+# Config lives in configs/beluga.yaml. Secrets and quick-swap
+# values are passed via environment variables:
+#   LLM_API_KEY           — LLM API key (required)
+#   LLM_ENDPOINT          — Override LLM endpoint, e.g. https://openrouter.ai/api/v1
+#   BELUGA_DB_PASSWORD    — Database password (default: beluga)
+
+services:
+  # ── PostgreSQL + pgvector ──────────────────────────────────
+  postgres:
+    image: pgvector/pgvector:pg17
+    container_name: beluga-postgres
+    ports:
+      - "5432:5432"
+    environment:
+      POSTGRES_DB: beluga
+      POSTGRES_USER: beluga
+      POSTGRES_PASSWORD: beluga
+    volumes:
+      - beluga-pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U beluga"]
+      interval: 5s
+      timeout: 3s
+      retries: 5
+    networks:
+      - beluga
+
+  # ── Beluga Daemon ──────────────────────────────────────────
+  daemon:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: beluga-daemon
+    ports:
+      - "8080:8080" # HTTP (health, webhooks)
+    depends_on:
+      postgres:
+        condition: service_healthy
+    environment:
+      LLM_API_KEY: ${LLM_API_KEY:-}
+      LLM_ENDPOINT: ${LLM_ENDPOINT:-}
+      BELUGA_DB_HOST: postgres
+      BELUGA_DB_PASSWORD: beluga
+    volumes:
+      # Mount Docker socket for sibling container management.
+      # Beluga creates agent workspace sandboxes on the host daemon.
+      - /var/run/docker.sock:/var/run/docker.sock
+      # Local config — DB host points at the postgres service.
+      - ./configs/beluga.yaml:/etc/beluga/config.yaml:ro
+    networks:
+      - beluga
+
+networks:
+  beluga:
+    name: beluga-local
+    driver: bridge
+
+volumes:
+  beluga-pgdata:

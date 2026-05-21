@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/collinpfeifer/beluga/internal/core/model"
+	"github.com/aspectrr/beluga/internal/core/model"
 )
 
 const (

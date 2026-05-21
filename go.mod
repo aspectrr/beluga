@@ -1,4 +1,4 @@
-module github.com/collinpfeifer/beluga
+module github.com/aspectrr/beluga
 
 go 1.25.0
 

@@ -6,7 +6,7 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/collinpfeifer/beluga/internal/core/model"
+	"github.com/aspectrr/beluga/internal/core/model"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 )

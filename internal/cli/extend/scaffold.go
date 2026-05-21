@@ -93,8 +93,8 @@ import (
 	"fmt"
 	"log/slog"
 
-	"github.com/collinpfeifer/beluga/internal/core/extension"
-	"github.com/collinpfeifer/beluga/internal/core/tools"
+	"github.com/aspectrr/beluga/internal/core/extension"
+	"github.com/aspectrr/beluga/internal/core/tools"
 )
 
 // Extension implements extension.Extension for %s.
@@ -151,7 +151,7 @@ import (
 	"encoding/json"
 	"fmt"
 
-	"github.com/collinpfeifer/beluga/internal/core/tools"
+	"github.com/aspectrr/beluga/internal/core/tools"
 )
 
 // ExampleTool is a placeholder tool. Replace with real tools.
@@ -203,7 +203,7 @@ import (
 	"encoding/json"
 	"testing"
 
-	"github.com/collinpfeifer/beluga/internal/core/tools"
+	"github.com/aspectrr/beluga/internal/core/tools"
 )
 
 func TestExtension(t *testing.T) {

@@ -10,7 +10,7 @@ import (
 	"net/http"
 	"strings"
 
-	"github.com/collinpfeifer/beluga/internal/core/config"
+	"github.com/aspectrr/beluga/internal/core/config"
 )
 
 // LLMClient is an OpenAI-compatible API client for chat completions.

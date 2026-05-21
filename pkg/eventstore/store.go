@@ -2,7 +2,7 @@
 package eventstore
 
 import (
-	internal "github.com/collinpfeifer/beluga/internal/core/eventstore"
+	internal "github.com/aspectrr/beluga/internal/core/eventstore"
 )
 
 // Store provides append-only event operations.

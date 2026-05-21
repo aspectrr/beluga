@@ -111,7 +111,7 @@ func findProjectRoot() string {
 	for {
 		modPath := filepath.Join(dir, "go.mod")
 		data, err := os.ReadFile(modPath)
-		if err == nil && strings.Contains(string(data), "github.com/collinpfeifer/beluga") {
+		if err == nil && strings.Contains(string(data), "github.com/aspectrr/beluga") {
 			return dir
 		}
 
@@ -191,7 +191,7 @@ func installLocal(srcDir, name, projectRoot string) error {
 
 	fmt.Fprintf(os.Stderr, "\nextension '%s' installed successfully.\n", name)
 	fmt.Fprintf(os.Stderr, "\nTo activate, register it in cmd/beluga/main.go:\n")
-	fmt.Fprintf(os.Stderr, "  1. import \"github.com/collinpfeifer/beluga/internal/extensions/%s\"\n", name)
+	fmt.Fprintf(os.Stderr, "  1. import \"github.com/aspectrr/beluga/internal/extensions/%s\"\n", name)
 	fmt.Fprintf(os.Stderr, "  2. Add case in lookupBuiltinExtension:\n")
 	fmt.Fprintf(os.Stderr, "     case \"%s\":\n", name)
 	fmt.Fprintf(os.Stderr, "         return &%s.Extension{}\n", packageName(name))

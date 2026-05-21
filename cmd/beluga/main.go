@@ -17,15 +17,15 @@ import (
 	"syscall"
 	"time"
 
-	"github.com/collinpfeifer/beluga/internal/cli/extend"
-	"github.com/collinpfeifer/beluga/internal/core/agent"
-	"github.com/collinpfeifer/beluga/internal/core/config"
-	"github.com/collinpfeifer/beluga/internal/core/database"
-	"github.com/collinpfeifer/beluga/internal/core/eventstore"
-	"github.com/collinpfeifer/beluga/internal/core/extension"
-	"github.com/collinpfeifer/beluga/internal/core/session"
-	"github.com/collinpfeifer/beluga/internal/core/tools"
-	"github.com/collinpfeifer/beluga/internal/core/workspace"
+	"github.com/aspectrr/beluga/internal/cli/extend"
+	"github.com/aspectrr/beluga/internal/core/agent"
+	"github.com/aspectrr/beluga/internal/core/config"
+	"github.com/aspectrr/beluga/internal/core/database"
+	"github.com/aspectrr/beluga/internal/core/eventstore"
+	"github.com/aspectrr/beluga/internal/core/extension"
+	"github.com/aspectrr/beluga/internal/core/session"
+	"github.com/aspectrr/beluga/internal/core/tools"
+	"github.com/aspectrr/beluga/internal/core/workspace"
 )
 
 const defaultSystemPrompt = `You are Beluga, a managed agent. You work in a sandboxed workspace where you can read and write files and execute commands.
@@ -479,7 +479,7 @@ func lookupExtension(name string) extension.Extension {
 	// an import and case here. With no extensions installed, this returns nil.
 	//
 	// Example (after `beluga extend install clickup`):
-	//   import "github.com/collinpfeifer/beluga/internal/extensions/clickup"
+	//   import "github.com/aspectrr/beluga/internal/extensions/clickup"
 	//   case "clickup": return &clickup.Extension{}
 	_ = name
 	return nil

@@ -5,7 +5,7 @@ import (
 	"fmt"
 	"strings"
 
-	"github.com/collinpfeifer/beluga/internal/core/config"
+	"github.com/aspectrr/beluga/internal/core/config"
 	"github.com/jackc/pgx/v5/pgxpool"
 )
 

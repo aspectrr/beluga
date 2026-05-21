@@ -7,8 +7,8 @@ import (
 	"log/slog"
 	"strings"
 
-	"github.com/collinpfeifer/beluga/internal/core/eventstore"
-	"github.com/collinpfeifer/beluga/internal/core/model"
+	"github.com/aspectrr/beluga/internal/core/eventstore"
+	"github.com/aspectrr/beluga/internal/core/model"
 )
 
 const (
