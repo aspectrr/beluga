@@ -47,7 +47,7 @@ function scaffoldLocal(name: string, dir: string): void {
 	// index.ts
 	writeFileSync(
 		join(dir, "index.ts"),
-		`import type { Extension, ExtensionContext } from "beluga";
+		`import type { Extension, ExtensionContext } from "@aspectrr/beluga-sdk";
 
 export class ${pascalCase(name)}Extension implements Extension {
   name = "${name}";

@@ -1,15 +1,15 @@
 // ── Extension manager ─────────────────────────────────────────
-// Re-exports from @beluga/sdk + adds runtime manager logic.
+// Re-exports from beluga-sdk + adds runtime manager logic.
 
 import type { ExtensionContext } from "./context.js";
 import type { Logger } from "pino";
 
 // Re-export Extension interface from SDK
-export type { Extension } from "@beluga/sdk";
+export type { Extension } from "@aspectrr/beluga-sdk";
 
 export class ExtensionManager {
 	private extensions: Array<{
-		ext: import("@beluga/sdk").Extension;
+		ext: import("beluga-sdk").Extension;
 		ctx: ExtensionContext;
 	}> = [];
 	private logger: Logger;
@@ -18,7 +18,7 @@ export class ExtensionManager {
 		this.logger = logger;
 	}
 
-	register(ext: import("@beluga/sdk").Extension, ctx: ExtensionContext): void {
+	register(ext: import("beluga-sdk").Extension, ctx: ExtensionContext): void {
 		this.extensions.push({ ext, ctx });
 	}
 

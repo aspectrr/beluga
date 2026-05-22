@@ -1,5 +1,5 @@
 // ── Tool registry ──────────────────────────────────────────────
-// Re-exports from @beluga/sdk. Beluga core uses the same types as extensions.
+// Re-exports from beluga-sdk. Beluga core uses the same types as extensions.
 
 export {
 	Registry,
@@ -10,4 +10,4 @@ export {
 	type SandboxRunner,
 	type ExecResult,
 	type LLMToolDef,
-} from "@beluga/sdk";
+} from "@aspectrr/beluga-sdk";

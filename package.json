@@ -2,7 +2,6 @@
   "name": "beluga",
   "version": "0.1.0",
   "type": "module",
-  "workspaces": ["packages/*"],
   "scripts": {
     "dev": "bun run --watch src/main.ts",
     "start": "bun run src/main.ts",
@@ -25,7 +24,8 @@
     "pino": "^9.7.0",
     "pino-pretty": "^13.0.0",
     "postgres": "^3.4.7",
-    "zod": "^3.25.46"
+    "zod": "^3.25.46",
+    "@aspectrr/beluga-sdk": "^0.1.0"
   },
   "devDependencies": {
     "@types/bun": "^1.2.15",

@@ -2,7 +2,7 @@
 // Runtime implementation of the SDK's ExtensionContext interface.
 // Adds concrete types that bind to the actual Beluga runtime.
 
-import type { Registry } from "@beluga/sdk";
+import type { Registry } from "@aspectrr/beluga-sdk";
 import type { SessionStore } from "../session/store.js";
 import type { EventStore } from "../eventstore/store.js";
 import type { ExtDB } from "../database/extdb.js";

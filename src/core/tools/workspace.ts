@@ -7,7 +7,7 @@ import type {
 	ToolDef,
 	ToolContext,
 	SandboxRunner,
-} from "@beluga/sdk";
+} from "@aspectrr/beluga-sdk";
 
 class WorkspaceBashTool implements Tool {
 	definition(): ToolDef {
