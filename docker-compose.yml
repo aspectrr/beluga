@@ -46,12 +46,18 @@ services:
     environment:
       LLM_API_KEY: ${LLM_API_KEY:-}
       LLM_ENDPOINT: ${LLM_ENDPOINT:-}
+      LLM_MODEL: ${LLM_MODEL:-}
       BELUGA_DB_HOST: postgres
       BELUGA_DB_PASSWORD: beluga
+      CLICKUP_API_TOKEN: ${CLICKUP_API_TOKEN:-}
+      CLICKUP_TEAM_ID: ${CLICKUP_TEAM_ID:-}
+      CLICKUP_SPACE_ID: ${CLICKUP_SPACE_ID:-}
+      CLICKUP_LIST_ID: ${CLICKUP_LIST_ID:-}
+      CLICKUP_AGENT_USERNAME: ${CLICKUP_AGENT_USERNAME:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./.beluga/config.json:/etc/beluga/config.json:ro
-      - ./.beluga/extensions:/app/.beluga/extensions
+      - ./.beluga/extensions:/etc/beluga/extensions
     networks:
       - beluga
 

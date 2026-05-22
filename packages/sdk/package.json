@@ -1,6 +1,6 @@
 {
   "name": "@aspectrr/beluga-sdk",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "SDK for building Beluga extensions. Provides types, interfaces, and utilities.",
   "type": "module",
   "main": "src/index.ts",

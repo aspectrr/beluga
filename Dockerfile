@@ -3,7 +3,7 @@ FROM oven/bun:1 AS base
 WORKDIR /app
 
 COPY . .
-RUN bun install
+RUN bun install --frozen-lockfile --production
 
 ENV NODE_ENV=production
 EXPOSE 8080

@@ -163,6 +163,10 @@ async function startCommand(configPath: string): Promise<void> {
   await extMgr.initAll();
   logger.info({ count: enabledExtensions(config).length }, "extensions initialized");
 
+  // Refresh orchestrator tools after extensions registered theirs
+  orchestrator.setTools(registry.list());
+  logger.info({ count: registry.list().length }, "tools updated after extensions");
+
   // Start extensions
   const abortController = new AbortController();
   extMgr.startAll(abortController.signal).catch((err) => {
@@ -238,7 +242,7 @@ async function onboardCommand(): Promise<void> {
       },
       workspace: {
         dockerHost: "",
-        agentImage: "beluga/agent-workspace:latest",
+        agentImage: "ubuntu:24.04",
         cpuLimit: "1.0",
         memoryLimit: "1g",
         idleTimeout: "1h",
