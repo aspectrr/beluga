@@ -82,6 +82,13 @@ export interface ExtensionContext {
 		metadata?: Record<string, unknown>,
 	) => Promise<Session>;
 
+	/** Continue an existing session with a new user message */
+	continueSession: (
+		sessionId: string,
+		message: string,
+		metadata?: Record<string, unknown>,
+	) => Promise<Session>;
+
 	/** Shared state for cross-extension communication.
 	 *  Extensions read/write arbitrary keys.
 	 *  Example: host sets `grpcProvider`, remora reads it. */

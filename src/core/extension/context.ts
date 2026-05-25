@@ -23,5 +23,10 @@ export interface ExtensionContext {
 		initialMessage: string,
 		metadata?: Record<string, unknown>,
 	) => Promise<Session>;
+	continueSession: (
+		sessionId: string,
+		message: string,
+		metadata?: Record<string, unknown>,
+	) => Promise<Session>;
 	shared: Record<string, unknown>;
 }

@@ -49,7 +49,13 @@ class ToolExecutorAdapter implements ToolExecutor {
     args: Record<string, unknown>,
     sessionId: string
   ): Promise<Record<string, unknown>> {
-    const sandbox = this.workspaceManager.get(sessionId) ?? null;
+    let sandbox = this.workspaceManager.get(sessionId) ?? null;
+
+    // Auto-create sandbox for workspace tool calls
+    if (!sandbox && name.startsWith("workspace_")) {
+      sandbox = await this.workspaceManager.create(sessionId);
+    }
+
     return this.registry.execute(name, args, {
       sessionId,
       sandbox,
@@ -137,6 +143,14 @@ async function startCommand(configPath: string): Promise<void> {
     return orchestrator.handleNewSession(source, sourceId, initialMessage, metadata);
   };
 
+  const continueSession = async (
+    sessionId: string,
+    message: string,
+    metadata?: Record<string, unknown>
+  ) => {
+    return orchestrator.handleContinueSession(sessionId, message, metadata);
+  };
+
   // 9. Extension manager — loads from .beluga/extensions/
   const shared: Record<string, unknown> = {};
   const extMgr = new ExtensionManager(logger);
@@ -154,6 +168,7 @@ async function startCommand(configPath: string): Promise<void> {
       logger: logger.child({ extension: name }),
       promptDir: promptsDir,
       createSession,
+      continueSession,
       shared,
     }),
     logger

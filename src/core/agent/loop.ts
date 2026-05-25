@@ -69,9 +69,54 @@ export class Orchestrator {
 		});
 
 		// Start agent loop
-		this.startRun(session.id).catch((err) => {
+		this.startRun(session.id).catch(async (err) => {
 			this.logger.error({ err, sessionId: session.id }, "agent loop failed");
+			await this.terminate(session.id, true);
 		});
+
+		return session;
+	}
+
+	/** Continue an existing session with a new user message. Resumes if needed. */
+	async handleContinueSession(
+		sessionId: string,
+		message: string,
+		metadata?: Record<string, unknown>,
+	): Promise<Session> {
+		const session = await this.sessions.get(sessionId);
+		if (!session) throw new Error(`session not found: ${sessionId}`);
+
+		// Update metadata if provided
+		if (metadata) {
+			await this.sessions.updateMetadata(sessionId, metadata);
+		}
+
+		// Append new user message
+		await this.events.append(sessionId, "user_message", {
+			content: message,
+		});
+
+		// Resume if session was completed/failed — reset to pending first
+		if (session.status === "completed" || session.status === "failed") {
+			await this.sessions.updateStatus(sessionId, "pending");
+			await this.events.append(sessionId, "status_transition", {
+				from: session.status,
+				to: "pending",
+			});
+			this.startRun(sessionId).catch(async (err) => {
+				this.logger.error({ err, sessionId }, "agent loop failed on continue");
+				await this.terminate(sessionId, true);
+			});
+		} else if (session.status === "running") {
+			// Already running — the new message will be picked up on next iteration
+			this.logger.info({ sessionId }, "session running, message queued");
+		} else {
+			// pending or suspended — start/resume
+			this.startRun(sessionId).catch(async (err) => {
+				this.logger.error({ err, sessionId }, "agent loop failed on continue");
+				await this.terminate(sessionId, true);
+			});
+		}
 
 		return session;
 	}
@@ -211,11 +256,6 @@ export class Orchestrator {
 			from: "running",
 			to: status,
 		});
-
-		// Clear source for completed sessions
-		if (!failed) {
-			await this.sessions.clearSource(sessionId);
-		}
 
 		this.logger.info({ sessionId, status }, "session terminated");
 	}

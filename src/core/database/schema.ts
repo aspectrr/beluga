@@ -33,7 +33,7 @@ export const sessions = pgTable(
 			.defaultNow(),
 	},
 	(table) => [
-		uniqueIndex("sessions_source_idx").on(table.source, table.sourceId),
+		index("sessions_source_idx").on(table.source, table.sourceId),
 		index("sessions_status_idx").on(table.status),
 		index("sessions_updated_at_idx").on(table.updatedAt),
 	],
