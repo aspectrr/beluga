@@ -172,9 +172,7 @@ function autoInstallExtensions(
 			installExtensionFromURL(gitURL, extName, projectRoot);
 			console.log(`  ✓ extension '${extName}' installed`);
 		} catch (err) {
-			console.warn(
-				`  ✗ failed to install extension '${extName}': ${err}`,
-			);
+			console.warn(`  ✗ failed to install extension '${extName}': ${err}`);
 			missing.push(extName);
 		}
 	}
@@ -224,10 +222,7 @@ function installExtensionFromURL(
 			if (!config.extensions) config.extensions = {};
 			if (!config.extensions[name]) {
 				config.extensions[name] = { enabled: true };
-				writeFileSync(
-					configPath,
-					JSON.stringify(config, null, 2) + "\n",
-				);
+				writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
 			}
 		}
 	} finally {

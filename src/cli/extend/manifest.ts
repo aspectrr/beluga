@@ -14,6 +14,13 @@ export interface ConfigField {
 	secret?: boolean;
 }
 
+export interface ExtensionDependency {
+	/** Extension name (must match the name in its extension.json). */
+	name: string;
+	/** Git URL to install from if not already present. */
+	source: string;
+}
+
 export interface Manifest {
 	name: string;
 	version?: string;
@@ -21,6 +28,8 @@ export interface Manifest {
 	type?: string;
 	entrypoint?: string;
 	config: ConfigField[];
+	/** Other extensions this extension requires. Auto-installed if missing. */
+	dependencies?: ExtensionDependency[];
 }
 
 export function loadManifest(dir: string): Manifest | null {

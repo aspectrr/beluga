@@ -38,6 +38,11 @@ export async function installExtension(cfg: InstallConfig): Promise<void> {
 	const manifest = loadManifest(absPath);
 	const name = deriveName(manifest, gitURL, absPath);
 
+	// Install dependencies first (before we clean up tmp dir)
+	if (manifest?.dependencies && manifest.dependencies.length > 0) {
+		await installDependencies(manifest.dependencies, projectRoot);
+	}
+
 	try {
 		installLocal(absPath, name, projectRoot, manifest);
 	} finally {
@@ -166,6 +171,29 @@ function buildExtensionConfig(
 	}
 
 	return entry;
+}
+
+// ── Dependency resolution ──────────────────────────────────────
+
+async function installDependencies(
+	deps: Array<{ name: string; source: string }>,
+	projectRoot: string,
+): Promise<void> {
+	const extDir = join(projectRoot, ".beluga", "extensions");
+
+	for (const dep of deps) {
+		if (existsSync(join(extDir, dep.name))) {
+			console.log(`  dependency '${dep.name}' already installed, skipping`);
+			continue;
+		}
+
+		console.log(`  installing dependency '${dep.name}' from ${dep.source}...`);
+		await installExtension({
+			source: dep.source,
+			belugaDir: projectRoot,
+		});
+		console.log(`  ✓ dependency '${dep.name}' installed`);
+	}
 }
 
 function backupFile(path: string): void {
