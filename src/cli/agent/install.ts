@@ -12,6 +12,9 @@ import {
 import { join, resolve, basename, extname } from "path";
 import { execSync } from "child_process";
 import { loadAgentManifest, type AgentManifest } from "./manifest.js";
+import {
+	installExtension,
+} from "../extend/install.js";
 
 export interface AgentInstallConfig {
 	source: string;
@@ -39,7 +42,12 @@ export async function installAgent(cfg: AgentInstallConfig): Promise<void> {
 	const name = deriveName(manifest, gitURL, absPath);
 
 	try {
-		installLocal(absPath, name, projectRoot, manifest);
+		// Auto-install missing extensions (uses full install flow with config)
+		if (manifest?.extensionSources) {
+			await autoInstallExtensions(manifest.extensionSources, projectRoot);
+		}
+
+		installLocal(absPath, name, projectRoot);
 	} finally {
 		if (gitURL) {
 			try {
@@ -84,12 +92,7 @@ function installLocal(
 	srcDir: string,
 	name: string,
 	projectRoot: string,
-	manifest: AgentManifest | null,
 ): void {
-	// Auto-install missing extensions from extensionSources
-	if (manifest?.extensionSources) {
-		autoInstallExtensions(manifest.extensionSources, projectRoot);
-	}
 	const agentDir = join(projectRoot, ".beluga", "agents", name);
 
 	if (existsSync(agentDir)) {
@@ -115,20 +118,14 @@ function installLocal(
 	// Update .beluga/config.json
 	const configPath = join(projectRoot, ".beluga", "config.json");
 	if (existsSync(configPath)) {
-		updateConfig(configPath, name, manifest);
+		updateConfig(configPath, name);
 	} else {
 		console.warn("\nwarning: .beluga/config.json not found");
 		console.warn("Run 'beluga onboard' first, then retry.");
 	}
-
-	printPostInstall(name, manifest);
 }
 
-function updateConfig(
-	configPath: string,
-	name: string,
-	_manifest: AgentManifest | null,
-): void {
+function updateConfig(configPath: string, name: string): void {
 	const raw = readFileSync(configPath, "utf-8");
 	const config = JSON.parse(raw);
 
@@ -145,18 +142,24 @@ function updateConfig(
 	console.log(`\nupdated .beluga/config.json with '${name}' agent entry`);
 }
 
-/** Auto-install extensions listed in extensionSources that aren't already installed. */
-function autoInstallExtensions(
+/**
+ * Auto-install extensions listed in extensionSources.
+ * Uses the full installExtension flow so config fields get populated
+ * and required env vars are printed.
+ */
+async function autoInstallExtensions(
 	sources: Record<string, string>,
 	projectRoot: string,
-): void {
+): Promise<void> {
 	const extDir = join(projectRoot, ".beluga", "extensions");
 	const missing: string[] = [];
+
+	console.log("\n━━ Installing extensions ━━━━━━━━━━━━━━━━━━━━━━━");
 
 	for (const [extName, gitURL] of Object.entries(sources)) {
 		const installed = existsSync(join(extDir, extName));
 		if (installed) {
-			console.log(`  extension '${extName}' already installed, skipping`);
+			console.log(`\n  extension '${extName}' already installed, skipping`);
 			continue;
 		}
 
@@ -167,10 +170,12 @@ function autoInstallExtensions(
 			continue;
 		}
 
-		console.log(`  installing extension '${extName}' from ${gitURL}...`);
+		console.log(`\n  installing extension '${extName}' from ${gitURL}...`);
 		try {
-			installExtensionFromURL(gitURL, extName, projectRoot);
-			console.log(`  ✓ extension '${extName}' installed`);
+			await installExtension({
+				source: gitURL,
+				belugaDir: projectRoot,
+			});
 		} catch (err) {
 			console.warn(`  ✗ failed to install extension '${extName}': ${err}`);
 			missing.push(extName);
@@ -183,74 +188,6 @@ function autoInstallExtensions(
 		);
 		console.warn("Install them manually with: beluga extend install <url>");
 	}
-}
 
-/** Clone and install a single extension from a git URL. */
-function installExtensionFromURL(
-	gitURL: string,
-	name: string,
-	projectRoot: string,
-): void {
-	const tmpDir = join(
-		projectRoot,
-		".beluga",
-		"tmp",
-		`ext-${name}-${Date.now()}`,
-	);
-	mkdirSync(tmpDir, { recursive: true });
-
-	try {
-		execSync(`git clone ${gitURL} ${tmpDir}`, { stdio: "pipe" });
-
-		const extDir = join(projectRoot, ".beluga", "extensions", name);
-		mkdirSync(extDir, { recursive: true });
-
-		for (const entry of readdirSync(tmpDir)) {
-			const src = join(tmpDir, entry);
-			if (statSync(src).isDirectory()) continue;
-			const ext = extname(entry).toLowerCase();
-			if ([".ts", ".js", ".json", ".md"].includes(ext)) {
-				writeFileSync(join(extDir, entry), readFileSync(src));
-			}
-		}
-
-		// Update config.json with extension entry
-		const configPath = join(projectRoot, ".beluga", "config.json");
-		if (existsSync(configPath)) {
-			const raw = readFileSync(configPath, "utf-8");
-			const config = JSON.parse(raw);
-			if (!config.extensions) config.extensions = {};
-			if (!config.extensions[name]) {
-				config.extensions[name] = { enabled: true };
-				writeFileSync(configPath, JSON.stringify(config, null, 2) + "\n");
-			}
-		}
-	} finally {
-		try {
-			rmSync(tmpDir, { recursive: true });
-		} catch {
-			// best-effort cleanup
-		}
-	}
-}
-
-function printPostInstall(name: string, _manifest: AgentManifest | null): void {
-	console.log(`\n✓ agent '${name}' installed successfully.`);
-
-	console.log("\n━━ Next steps ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");
-	console.log(
-		"  1. Edit .beluga/agents/" + name + "/SYSTEM.md to customize the agent",
-	);
-	console.log(
-		"  2. Edit .beluga/agents/" +
-			name +
-			"/agent.json to set model, extensions, etc.",
-	);
-	console.log("  3. Add routing to .beluga/config.json:");
-	console.log(
-		`     "routing": { "${name}": "${name}", "_default": "default" }`,
-	);
-	console.log("  4. Restart Beluga:");
-	console.log("       bun run src/main.ts start");
-	console.log();
+	console.log("\n━━ Extensions complete ━━━━━━━━━━━━━━━━━━━━━━━━━");
 }
