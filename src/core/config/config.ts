@@ -41,12 +41,19 @@ export interface ExtensionEntry {
 	[key: string]: unknown;
 }
 
+export interface AgentEntry {
+	enabled: boolean;
+	[key: string]: unknown;
+}
+
 export interface Config {
 	llm: LLMConfig;
 	database: DatabaseConfig;
 	workspace: WorkspaceConfig;
 	agent: AgentConfig;
 	extensions: Record<string, ExtensionEntry>;
+	agents: Record<string, AgentEntry>;
+	routing: Record<string, string>;
 }
 
 function expandEnvVars(value: string): string {
@@ -90,6 +97,8 @@ function parseConfig(raw: Record<string, unknown>): Config {
 	const ag = (raw.agent ?? {}) as Record<string, unknown>;
 	const llm = (raw.llm ?? {}) as Record<string, unknown>;
 	const ext = (raw.extensions ?? {}) as Record<string, unknown>;
+	const agents = (raw.agents ?? {}) as Record<string, unknown>;
+	const routing = (raw.routing ?? {}) as Record<string, unknown>;
 
 	// Parse idle timeout (e.g. "1h" → 3600, "30s" → 30)
 	const idleTimeoutRaw = String(ws.idleTimeout ?? ws.idle_timeout ?? "1h");
@@ -144,6 +153,8 @@ function parseConfig(raw: Record<string, unknown>): Config {
 			),
 		},
 		extensions: parseExtensions(ext),
+		agents: parseAgentEntries(agents),
+		routing: parseRouting(routing),
 	};
 }
 
@@ -163,6 +174,34 @@ function parseExtensions(
 		} else {
 			result[name] = { enabled: true };
 		}
+	}
+	return result;
+}
+
+function parseAgentEntries(
+	raw: Record<string, unknown>,
+): Record<string, AgentEntry> {
+	const result: Record<string, AgentEntry> = {};
+	for (const [name, val] of Object.entries(raw)) {
+		if (val === null || val === undefined) {
+			result[name] = { enabled: true };
+		} else if (typeof val === "object") {
+			const obj = val as Record<string, unknown>;
+			result[name] = {
+				enabled: obj.enabled !== false,
+				...obj,
+			};
+		} else {
+			result[name] = { enabled: true };
+		}
+	}
+	return result;
+}
+
+function parseRouting(raw: Record<string, unknown>): Record<string, string> {
+	const result: Record<string, string> = {};
+	for (const [key, val] of Object.entries(raw)) {
+		result[key] = String(val);
 	}
 	return result;
 }
@@ -188,4 +227,37 @@ export function enabledExtensions(config: Config): string[] {
 	return Object.entries(config.extensions)
 		.filter(([, v]) => v.enabled)
 		.map(([k]) => k);
+}
+
+// ── Agent config helpers ────────────────────────────────────────
+
+export function isAgentEnabled(config: Config, name: string): boolean {
+	const agent = config.agents[name];
+	return agent?.enabled === true;
+}
+
+export function enabledAgents(config: Config): string[] {
+	return Object.entries(config.agents)
+		.filter(([, v]) => v.enabled)
+		.map(([k]) => k);
+}
+
+/** Resolve which agent should handle a session from the given source/sourceId. */
+export function resolveRouting(
+	config: Config,
+	source: string,
+	sourceId?: string,
+): string {
+	// Exact match: source:sourceId
+	if (sourceId) {
+		const exact = config.routing[`${source}:${sourceId}`];
+		if (exact) return exact;
+	}
+
+	// Bare source match
+	const bare = config.routing[source];
+	if (bare) return bare;
+
+	// Default
+	return config.routing["_default"] ?? "default";
 }

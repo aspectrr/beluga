@@ -24,6 +24,15 @@ export {
 	type LLMToolDef,
 } from "./tools.js";
 
+// Agent types
+export type {
+	AgentManifest,
+	AgentModelConfig,
+	AgentConfigField,
+	ResolvedAgent,
+	RoutingEntry,
+} from "./agent.js";
+
 // Domain types
 export {
 	SessionStatus,
