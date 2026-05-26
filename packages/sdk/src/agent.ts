@@ -43,6 +43,9 @@ export interface AgentManifest {
 	/** Extensions this agent should have access to (additive, names must match installed extensions). */
 	extensions?: string[];
 
+	/** Maps extension name → git URL for auto-install. Keys must match entries in `extensions`. */
+	extensionSources?: Record<string, string>;
+
 	/** Entrypoint for custom init logic (optional). */
 	entrypoint?: string;
 

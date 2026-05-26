@@ -86,6 +86,10 @@ function installLocal(
 	projectRoot: string,
 	manifest: AgentManifest | null,
 ): void {
+	// Auto-install missing extensions from extensionSources
+	if (manifest?.extensionSources) {
+		autoInstallExtensions(manifest.extensionSources, projectRoot);
+	}
 	const agentDir = join(projectRoot, ".beluga", "agents", name);
 
 	if (existsSync(agentDir)) {
@@ -123,7 +127,7 @@ function installLocal(
 function updateConfig(
 	configPath: string,
 	name: string,
-	manifest: AgentManifest | null,
+	_manifest: AgentManifest | null,
 ): void {
 	const raw = readFileSync(configPath, "utf-8");
 	const config = JSON.parse(raw);
@@ -141,7 +145,101 @@ function updateConfig(
 	console.log(`\nupdated .beluga/config.json with '${name}' agent entry`);
 }
 
-function printPostInstall(name: string, manifest: AgentManifest | null): void {
+/** Auto-install extensions listed in extensionSources that aren't already installed. */
+function autoInstallExtensions(
+	sources: Record<string, string>,
+	projectRoot: string,
+): void {
+	const extDir = join(projectRoot, ".beluga", "extensions");
+	const missing: string[] = [];
+
+	for (const [extName, gitURL] of Object.entries(sources)) {
+		const installed = existsSync(join(extDir, extName));
+		if (installed) {
+			console.log(`  extension '${extName}' already installed, skipping`);
+			continue;
+		}
+
+		if (!gitURL) {
+			console.warn(
+				`  warning: no source URL for extension '${extName}', skipping`,
+			);
+			continue;
+		}
+
+		console.log(`  installing extension '${extName}' from ${gitURL}...`);
+		try {
+			installExtensionFromURL(gitURL, extName, projectRoot);
+			console.log(`  ✓ extension '${extName}' installed`);
+		} catch (err) {
+			console.warn(
+				`  ✗ failed to install extension '${extName}': ${err}`,
+			);
+			missing.push(extName);
+		}
+	}
+
+	if (missing.length > 0) {
+		console.warn(
+			`\nwarning: ${missing.length} extension(s) could not be auto-installed: ${missing.join(", ")}`,
+		);
+		console.warn("Install them manually with: beluga extend install <url>");
+	}
+}
+
+/** Clone and install a single extension from a git URL. */
+function installExtensionFromURL(
+	gitURL: string,
+	name: string,
+	projectRoot: string,
+): void {
+	const tmpDir = join(
+		projectRoot,
+		".beluga",
+		"tmp",
+		`ext-${name}-${Date.now()}`,
+	);
+	mkdirSync(tmpDir, { recursive: true });
+
+	try {
+		execSync(`git clone ${gitURL} ${tmpDir}`, { stdio: "pipe" });
+
+		const extDir = join(projectRoot, ".beluga", "extensions", name);
+		mkdirSync(extDir, { recursive: true });
+
+		for (const entry of readdirSync(tmpDir)) {
+			const src = join(tmpDir, entry);
+			if (statSync(src).isDirectory()) continue;
+			const ext = extname(entry).toLowerCase();
+			if ([".ts", ".js", ".json", ".md"].includes(ext)) {
+				writeFileSync(join(extDir, entry), readFileSync(src));
+			}
+		}
+
+		// Update config.json with extension entry
+		const configPath = join(projectRoot, ".beluga", "config.json");
+		if (existsSync(configPath)) {
+			const raw = readFileSync(configPath, "utf-8");
+			const config = JSON.parse(raw);
+			if (!config.extensions) config.extensions = {};
+			if (!config.extensions[name]) {
+				config.extensions[name] = { enabled: true };
+				writeFileSync(
+					configPath,
+					JSON.stringify(config, null, 2) + "\n",
+				);
+			}
+		}
+	} finally {
+		try {
+			rmSync(tmpDir, { recursive: true });
+		} catch {
+			// best-effort cleanup
+		}
+	}
+}
+
+function printPostInstall(name: string, _manifest: AgentManifest | null): void {
 	console.log(`\n✓ agent '${name}' installed successfully.`);
 
 	console.log("\n━━ Next steps ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━");

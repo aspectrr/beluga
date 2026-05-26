@@ -27,6 +27,7 @@ export interface AgentManifest {
 	maxIterations?: number;
 	maxContextTokens?: number;
 	extensions?: string[];
+	extensionSources?: Record<string, string>;
 	entrypoint?: string;
 	config?: AgentConfigField[];
 }
