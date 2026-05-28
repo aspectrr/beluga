@@ -1,8 +1,9 @@
 // ── Agent scaffold ────────────────────────────────────────────
 // Creates a new agent directory with agent.json + SYSTEM.md.
 
-import { mkdirSync, writeFileSync, existsSync, readFileSync } from "fs";
-import { join, resolve } from "path";
+import { mkdirSync, writeFileSync, existsSync, readFileSync, cpSync } from "fs";
+import { join, resolve, dirname } from "path";
+import { fileURLToPath } from "url";
 
 export interface AgentScaffoldConfig {
 	name: string;
@@ -28,6 +29,9 @@ export function scaffoldAgent(config: AgentScaffoldConfig): void {
 	}
 
 	console.log(`\n✓ agent '${config.name}' scaffolded at ${dir}`);
+
+	// Seed built-in creation skills
+	seedBuiltinSkills(dir);
 }
 
 function scaffoldBlank(name: string, dir: string): void {
@@ -100,4 +104,29 @@ function scaffoldFromTemplate(
 	}
 
 	console.log(`  (based on agent '${fromName}')`);
+}
+
+// ── Built-in skills seeding ───────────────────────────────────
+
+const BUILTIN_SKILLS = ["create-agent", "create-extension"];
+
+function seedBuiltinSkills(agentDir: string): void {
+	const skillsDir = join(agentDir, "skills");
+	mkdirSync(skillsDir, { recursive: true });
+
+	const thisDir = dirname(fileURLToPath(import.meta.url));
+	const builtinDir = join(thisDir, "skills");
+
+	if (!existsSync(builtinDir)) return;
+
+	for (const skillName of BUILTIN_SKILLS) {
+		const srcSkillDir = join(builtinDir, skillName);
+		const destSkillDir = join(skillsDir, skillName);
+
+		if (!existsSync(srcSkillDir)) continue;
+		if (existsSync(destSkillDir)) continue;
+
+		cpSync(srcSkillDir, destSkillDir, { recursive: true });
+		console.log(`  seeded skill '${skillName}'`);
+	}
 }

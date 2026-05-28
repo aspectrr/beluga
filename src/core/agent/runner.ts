@@ -46,9 +46,8 @@ export class AgentRunner {
 			name: manifest.name,
 			systemPrompt,
 			model,
-			maxIterations: manifest.maxIterations ?? this.config.agent.maxIterations,
-			maxContextTokens:
-				manifest.maxContextTokens ?? this.config.agent.maxContextTokens,
+			maxIterations: manifest.maxIterations ?? 0, // 0 = unlimited
+			maxContextTokens: manifest.maxContextTokens ?? 0, // 0 = auto-detect
 			extensions: manifest.extensions ?? [],
 		};
 	}

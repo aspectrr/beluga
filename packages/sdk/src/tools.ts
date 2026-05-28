@@ -11,6 +11,8 @@ export interface ToolContext {
 	sessionId: string;
 	sandbox: SandboxRunner | null;
 	eventStore: import("./context.js").EventStore | null;
+	/** Name of the agent this tool invocation belongs to. */
+	agent?: string;
 }
 
 export interface SandboxRunner {

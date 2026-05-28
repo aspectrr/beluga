@@ -19,6 +19,7 @@ export const sessions = pgTable(
 		id: uuid("id").primaryKey().defaultRandom(),
 		source: text("source").notNull(),
 		sourceId: text("source_id").notNull(),
+		agent: text("agent"),
 		status: text("status").notNull().default("pending"),
 		sandboxId: text("sandbox_id"),
 		metadata: jsonb("metadata")
@@ -36,6 +37,7 @@ export const sessions = pgTable(
 		index("sessions_source_idx").on(table.source, table.sourceId),
 		index("sessions_status_idx").on(table.status),
 		index("sessions_updated_at_idx").on(table.updatedAt),
+		index("sessions_agent_idx").on(table.agent),
 	],
 );
 

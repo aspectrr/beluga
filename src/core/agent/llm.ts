@@ -5,6 +5,115 @@ import type { Logger } from "pino";
 import type { LLMConfig } from "../config/config.js";
 import type { LLMToolDef } from "../tools/registry.js";
 
+// ── Model context window detection ─────────────────────────────
+// Fetches model specs from models.dev API and caches them.
+// Falls back to a small built-in table for offline use.
+
+const MODELS_DEV_API = "https://models.dev/api.json";
+const DEFAULT_CONTEXT_WINDOW = 100000;
+const CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+/** Minimal model spec from models.dev. */
+interface ModelSpec {
+	id: string;
+	family?: string;
+	limit: { context: number };
+}
+
+let modelCache: Map<string, number> | null = null;
+let familyCache: Map<string, number> | null = null;
+let cacheTimestamp = 0;
+let fetchPromise: Promise<void> | null = null;
+
+/** Fetch model data from models.dev and populate the cache. */
+async function fetchModelData(): Promise<void> {
+	try {
+		const resp = await fetch(MODELS_DEV_API, {
+			signal: AbortSignal.timeout(10000),
+		});
+		if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+
+		const data = (await resp.json()) as Record<
+			string,
+			{ models?: Record<string, ModelSpec> }
+		>;
+
+		const models = new Map<string, number>();
+		const families = new Map<string, number>();
+
+		for (const provider of Object.values(data)) {
+			if (!provider.models) continue;
+			for (const [modelId, spec] of Object.entries(provider.models)) {
+				if (!spec.limit?.context) continue;
+				models.set(modelId, spec.limit.context);
+				// Track family → largest context in that family
+				if (spec.family) {
+					const existing = families.get(spec.family) ?? 0;
+					if (spec.limit.context > existing) {
+						families.set(spec.family, spec.limit.context);
+					}
+				}
+			}
+		}
+
+		modelCache = models;
+		familyCache = families;
+		cacheTimestamp = Date.now();
+	} catch {
+		// API unreachable — will use default
+	}
+}
+
+/**
+ * Warm up the model cache. Call once at startup.
+ * Non-blocking — returns immediately, fetches in background.
+ */
+export function warmModelCache(): void {
+	if (modelCache && Date.now() - cacheTimestamp < CACHE_TTL_MS) return;
+	if (!fetchPromise) {
+		fetchPromise = fetchModelData().finally(() => {
+			fetchPromise = null;
+		});
+	}
+}
+
+/**
+ * Detect the context window size for a model.
+ * Checks models.dev cache → family match → default.
+ */
+export async function detectContextWindow(model: string): Promise<number> {
+	// Ensure cache is populated
+	if (!modelCache || Date.now() - cacheTimestamp > CACHE_TTL_MS) {
+		await (fetchPromise ?? fetchModelData());
+	}
+
+	// 1. Exact ID match in models.dev cache
+	if (modelCache?.has(model)) {
+		return modelCache.get(model)!;
+	}
+
+	// 2. Prefix match (handles dated variants like gpt-4o-2024-05-13)
+	const lower = model.toLowerCase();
+	if (modelCache) {
+		for (const [id, size] of modelCache) {
+			if (lower.startsWith(id) || id.startsWith(lower)) {
+				return size;
+			}
+		}
+	}
+
+	// 3. Family match from models.dev (e.g. "gpt-4o-mini" → family "gpt")
+	if (familyCache) {
+		for (const [family, size] of familyCache) {
+			if (lower.includes(family)) {
+				return size;
+			}
+		}
+	}
+
+	return DEFAULT_CONTEXT_WINDOW;
+}
+
 // ── Types ──────────────────────────────────────────────────────
 
 export interface ChatMessage {

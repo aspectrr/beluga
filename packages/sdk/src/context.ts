@@ -41,6 +41,7 @@ export interface SessionStore {
 		source: string,
 		sourceId: string,
 		metadata?: Record<string, unknown>,
+		agent?: string | null,
 	): Promise<Session>;
 	get(id: string): Promise<Session | null>;
 	getBySource(source: string, sourceId: string): Promise<Session | null>;

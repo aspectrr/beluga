@@ -8,13 +8,13 @@ import {
 	rmSync,
 	readdirSync,
 	statSync,
+	cpSync,
 } from "fs";
-import { join, resolve, basename, extname } from "path";
+import { join, resolve, basename, extname, dirname } from "path";
 import { execSync } from "child_process";
+import { fileURLToPath } from "url";
 import { loadAgentManifest, type AgentManifest } from "./manifest.js";
-import {
-	installExtension,
-} from "../extend/install.js";
+import { installExtension } from "../extend/install.js";
 
 export interface AgentInstallConfig {
 	source: string;
@@ -88,11 +88,7 @@ function deriveName(
 	return basename(absPath);
 }
 
-function installLocal(
-	srcDir: string,
-	name: string,
-	projectRoot: string,
-): void {
+function installLocal(srcDir: string, name: string, projectRoot: string): void {
 	const agentDir = join(projectRoot, ".beluga", "agents", name);
 
 	if (existsSync(agentDir)) {
@@ -114,6 +110,9 @@ function installLocal(
 	}
 
 	console.log(`agent copied to ${agentDir}`);
+
+	// Seed built-in creation skills
+	seedBuiltinSkills(agentDir);
 
 	// Update .beluga/config.json
 	const configPath = join(projectRoot, ".beluga", "config.json");
@@ -190,4 +189,37 @@ async function autoInstallExtensions(
 	}
 
 	console.log("\n━━ Extensions complete ━━━━━━━━━━━━━━━━━━━━━━━━━");
+}
+
+// ── Built-in skills seeding ───────────────────────────────────
+
+const BUILTIN_SKILLS = ["create-agent", "create-extension"];
+
+/**
+ * Seeds built-in creation skills into an agent's skills directory.
+ * Skills are copied from src/cli/agent/skills/ so agents can create
+ * other agents and extensions.
+ */
+function seedBuiltinSkills(agentDir: string): void {
+	const skillsDir = join(agentDir, "skills");
+	mkdirSync(skillsDir, { recursive: true });
+
+	// Resolve the bundled skills directory relative to this file
+	const thisDir = dirname(fileURLToPath(import.meta.url));
+	const builtinDir = join(thisDir, "skills");
+
+	if (!existsSync(builtinDir)) {
+		return;
+	}
+
+	for (const skillName of BUILTIN_SKILLS) {
+		const srcSkillDir = join(builtinDir, skillName);
+		const destSkillDir = join(skillsDir, skillName);
+
+		if (!existsSync(srcSkillDir)) continue;
+		if (existsSync(destSkillDir)) continue; // Don't overwrite existing skills
+
+		cpSync(srcSkillDir, destSkillDir, { recursive: true });
+		console.log(`  seeded skill '${skillName}'`);
+	}
 }

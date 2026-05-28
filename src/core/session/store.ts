@@ -17,10 +17,17 @@ export class SessionStore {
 		source: string,
 		sourceId: string,
 		metadata: Record<string, unknown> = {},
+		agent?: string | null,
 	): Promise<Session> {
 		const [row] = await this.db
 			.insert(sessions)
-			.values({ source, sourceId, metadata, status: "pending" })
+			.values({
+				source,
+				sourceId,
+				metadata,
+				status: "pending",
+				agent: agent ?? null,
+			})
 			.returning();
 
 		return row as Session;

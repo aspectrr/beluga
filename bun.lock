@@ -5,7 +5,7 @@
     "": {
       "name": "beluga",
       "dependencies": {
-        "@aspectrr/beluga-sdk": "^0.1.4",
+        "@aspectrr/beluga-sdk": "^0.1.5",
         "@grpc/grpc-js": "^1.14.4",
         "@grpc/proto-loader": "^0.8.1",
         "commander": "^14.0.3",
@@ -26,7 +26,7 @@
     },
   },
   "packages": {
-    "@aspectrr/beluga-sdk": ["@aspectrr/beluga-sdk@0.1.4", "", { "peerDependencies": { "pino": "^9.0.0" } }, "sha512-njDMsaCxDpxb/6VWBi3/LIpe13Adnai0wbfxDhwTM3WpKRnhngbjVeLmEUthtLDRXWs9TlgFDnYy5GIgMBuCcQ=="],
+    "@aspectrr/beluga-sdk": ["@aspectrr/beluga-sdk@0.1.5", "", { "peerDependencies": { "pino": "^9.0.0" } }, "sha512-Mya1tGXdTY6cAVu/ZFD3AFCZ9XdBFrT1vD1+XE8MmsHq0Y80wLKivJPBZVxf16r0ZNpZayzfivQucJQvUbKSyA=="],
 
     "@balena/dockerignore": ["@balena/dockerignore@1.0.2", "", {}, "sha512-wMue2Sy4GAVTk6Ic4tJVcnfdau+gx2EnG7S+uAEe+TWJFqE4YoWN4/H8MSLj4eYJKxGg26lZwboEniNiNwZQ6Q=="],
 

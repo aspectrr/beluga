@@ -34,10 +34,10 @@ export interface AgentManifest {
 	/** Optional model override. Omit to use global config. */
 	model?: AgentModelConfig;
 
-	/** Max agent loop iterations. Omit for global default. */
+	/** Max agent loop iterations per run. 0 = unlimited (long-running). */
 	maxIterations?: number;
 
-	/** Max context tokens. Omit for global default. */
+	/** Max context tokens. 0 = auto-detect from model. */
 	maxContextTokens?: number;
 
 	/** Extensions this agent should have access to (additive, names must match installed extensions). */
@@ -68,7 +68,7 @@ export interface ResolvedAgent {
 	name: string;
 	systemPrompt: string;
 	model: AgentModelConfig;
-	maxIterations: number;
-	maxContextTokens: number;
+	maxIterations: number; // 0 = unlimited
+	maxContextTokens: number; // 0 = auto-detect
 	extensions: string[];
 }

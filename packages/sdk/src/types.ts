@@ -27,6 +27,7 @@ export interface Session {
 	id: string;
 	source: string;
 	sourceId: string;
+	agent: string | null;
 	status: SessionStatus;
 	sandboxId: string | null;
 	metadata: Record<string, unknown>;

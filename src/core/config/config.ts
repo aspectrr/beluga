@@ -31,11 +31,6 @@ export interface WorkspaceConfig {
 	networkMode: string;
 }
 
-export interface AgentConfig {
-	maxIterations: number;
-	maxContextTokens: number;
-}
-
 export interface ExtensionEntry {
 	enabled: boolean;
 	[key: string]: unknown;
@@ -50,7 +45,6 @@ export interface Config {
 	llm: LLMConfig;
 	database: DatabaseConfig;
 	workspace: WorkspaceConfig;
-	agent: AgentConfig;
 	extensions: Record<string, ExtensionEntry>;
 	agents: Record<string, AgentEntry>;
 	routing: Record<string, string>;
@@ -145,12 +139,6 @@ function parseConfig(raw: Record<string, unknown>): Config {
 			cpuLimit: String(ws.cpuLimit ?? ws.cpu_limit ?? "1.0"),
 			memoryLimit: String(ws.memoryLimit ?? ws.memory_limit ?? "1g"),
 			networkMode: String(ws.networkMode ?? ws.network_mode ?? "none"),
-		},
-		agent: {
-			maxIterations: Number(ag.maxIterations ?? ag.max_iterations ?? 30),
-			maxContextTokens: Number(
-				ag.maxContextTokens ?? ag.max_context_tokens ?? 128000,
-			),
 		},
 		extensions: parseExtensions(ext),
 		agents: parseAgentEntries(agents),

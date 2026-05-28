@@ -16,6 +16,8 @@ export interface ToolExecutor {
 		args: Record<string, unknown>,
 		sessionId: string,
 	): Promise<Record<string, unknown>>;
+	/** Name of the agent this executor belongs to. */
+	agent: string;
 }
 
 export class Orchestrator {
@@ -61,7 +63,12 @@ export class Orchestrator {
 		initialMessage: string,
 		metadata: Record<string, unknown> = {},
 	): Promise<Session> {
-		const session = await this.sessions.create(source, sourceId, metadata);
+		const session = await this.sessions.create(
+			source,
+			sourceId,
+			metadata,
+			this.toolExecutor.agent,
+		);
 
 		// Seed initial user message
 		await this.events.append(session.id, "user_message", {
@@ -140,7 +147,8 @@ export class Orchestrator {
 
 		this.logger.info({ sessionId }, "agent loop started");
 
-		for (let i = 0; i < this.maxIterations; i++) {
+		const maxIter = this.maxIterations || Infinity;
+		for (let i = 0; i < maxIter; i++) {
 			const result = await this.runIteration(sessionId);
 			if (result === "done") break;
 		}
