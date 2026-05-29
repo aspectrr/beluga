@@ -11,6 +11,7 @@ CREATE TABLE "sessions" (
 	"id" uuid PRIMARY KEY DEFAULT gen_random_uuid() NOT NULL,
 	"source" text NOT NULL,
 	"source_id" text NOT NULL,
+	"agent" text,
 	"status" text DEFAULT 'pending' NOT NULL,
 	"sandbox_id" text,
 	"metadata" jsonb DEFAULT '{}'::jsonb NOT NULL,
@@ -22,6 +23,7 @@ ALTER TABLE "events" ADD CONSTRAINT "events_session_id_sessions_id_fk" FOREIGN K
 CREATE UNIQUE INDEX "events_session_seq_idx" ON "events" USING btree ("session_id","seq");--> statement-breakpoint
 CREATE INDEX "events_type_idx" ON "events" USING btree ("session_id","type");--> statement-breakpoint
 CREATE INDEX "events_data_idx" ON "events" USING btree ("data");--> statement-breakpoint
-CREATE UNIQUE INDEX "sessions_source_idx" ON "sessions" USING btree ("source","source_id");--> statement-breakpoint
+CREATE INDEX "sessions_source_idx" ON "sessions" USING btree ("source","source_id");--> statement-breakpoint
 CREATE INDEX "sessions_status_idx" ON "sessions" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "sessions_updated_at_idx" ON "sessions" USING btree ("updated_at");
+CREATE INDEX "sessions_updated_at_idx" ON "sessions" USING btree ("updated_at");--> statement-breakpoint
+CREATE INDEX "sessions_agent_idx" ON "sessions" USING btree ("agent");

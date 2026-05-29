@@ -1,5 +1,5 @@
 {
-  "id": "44949f95-964b-48ff-9f9c-f0378688f822",
+  "id": "0d506c41-e686-4336-818a-975eb2309ab2",
   "prevId": "00000000-0000-0000-0000-000000000000",
   "version": "7",
   "dialect": "postgresql",
@@ -150,6 +150,12 @@
           "primaryKey": false,
           "notNull": true
         },
+        "agent": {
+          "name": "agent",
+          "type": "text",
+          "primaryKey": false,
+          "notNull": false
+        },
         "status": {
           "name": "status",
           "type": "text",
@@ -202,7 +208,7 @@
               "nulls": "last"
             }
           ],
-          "isUnique": true,
+          "isUnique": false,
           "concurrently": false,
           "method": "btree",
           "with": {}
@@ -227,6 +233,21 @@
           "columns": [
             {
               "expression": "updated_at",
+              "isExpression": false,
+              "asc": true,
+              "nulls": "last"
+            }
+          ],
+          "isUnique": false,
+          "concurrently": false,
+          "method": "btree",
+          "with": {}
+        },
+        "sessions_agent_idx": {
+          "name": "sessions_agent_idx",
+          "columns": [
+            {
+              "expression": "agent",
               "isExpression": false,
               "asc": true,
               "nulls": "last"

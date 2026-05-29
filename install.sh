@@ -231,11 +231,11 @@ info "running database migrations..."
 cd "$BELUGA_DIR"
 BELUGA_DB_HOST=127.0.0.1 \
 BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
-  bun run db:migrate 2>/dev/null || {
+  bun run db:migrate || {
     warn "drizzle migrate failed, trying db:push..."
     BELUGA_DB_HOST=127.0.0.1 \
     BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
-      bun run db:push
+      bun run db:push --force
   }
 
 # ── 8. Systemd service ───────────────────────────────────────
