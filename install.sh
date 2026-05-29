@@ -230,24 +230,33 @@ fi
 info "running database migrations..."
 cd "$BELUGA_DIR"
 
-run_migrations() {
-  NO_COLOR=1 BELUGA_DB_HOST=127.0.0.1 \
-  BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
-    bun run db:migrate 2>&1
+apply_sql_migrations() {
+  # Apply migration SQL files directly via psql
+  for sql_file in drizzle/*.sql; do
+    [[ -f "$sql_file" ]] || continue
+    info "applying $sql_file ..."
+    # Split on drizzle statement-breakpoint comments, execute each statement
+    sed 's/--> statement-breakpoint/;/g' "$sql_file" \
+      | docker exec -i beluga-postgres psql -U beluga -v ON_ERROR_STOP=1 2>&1
+  done
 }
 
-run_push() {
-  NO_COLOR=1 BELUGA_DB_HOST=127.0.0.1 \
+apply_drizzle_push() {
+  NO_COLOR=1 TERM=dumb CI=true BELUGA_DB_HOST=127.0.0.1 \
   BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
     bun x drizzle-kit push 2>&1
 }
 
-if ! run_migrations; then
+# Try drizzle-kit migrate first
+if ! NO_COLOR=1 TERM=dumb CI=true BELUGA_DB_HOST=127.0.0.1 \
+     BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
+     bun run db:migrate 2>&1; then
   warn "drizzle migrate failed, trying db:push..."
-  if ! run_push; then
-    warn "db:push failed, resetting database and retrying..."
-    docker exec beluga-postgres psql -U beluga -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>&1
-    if ! run_migrations && ! run_push; then
+  if ! apply_drizzle_push; then
+    warn "db:push failed, resetting database and applying SQL directly..."
+    docker exec beluga-postgres psql -U beluga -c \
+      "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>&1
+    if ! apply_sql_migrations && ! apply_drizzle_push; then
       error "database migrations failed after reset. check logs above."
     fi
   fi
