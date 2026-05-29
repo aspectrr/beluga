@@ -1,11 +1,11 @@
 // ── Agent types ────────────────────────────────────────────────
 // Defines the manifest format for Beluga agents.
 
-/** Model configuration override for an agent. All fields optional — falls back to global config. */
-export interface AgentModelConfig {
-	endpoint?: string;
-	apiKey?: string;
-	model?: string;
+/** Fully resolved LLM configuration (all fields required after merge). */
+export interface ResolvedModelConfig {
+	endpoint: string;
+	apiKey: string;
+	model: string;
 	embeddingModel?: string;
 	embeddingDimensions?: number;
 }
@@ -30,9 +30,6 @@ export interface AgentManifest {
 
 	/** Path to system prompt file (relative to agent directory) */
 	systemPrompt: string;
-
-	/** Optional model override. Omit to use global config. */
-	model?: AgentModelConfig;
 
 	/** Max agent loop iterations per run. 0 = unlimited (long-running). */
 	maxIterations?: number;
@@ -67,7 +64,7 @@ export interface AgentConfigField {
 export interface ResolvedAgent {
 	name: string;
 	systemPrompt: string;
-	model: AgentModelConfig;
+	model: ResolvedModelConfig;
 	maxIterations: number; // 0 = unlimited
 	maxContextTokens: number; // 0 = auto-detect
 	extensions: string[];

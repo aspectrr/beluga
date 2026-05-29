@@ -3,6 +3,7 @@
 
 import Docker from "dockerode";
 import type { Logger } from "pino";
+import type { Extension } from "@aspectrr/beluga-sdk";
 
 export interface ManagerConfig {
 	dockerHost: string;
@@ -133,6 +134,7 @@ export class WorkspaceManager {
 	private logger: Logger;
 	private sandboxes: Map<string, Sandbox> = new Map();
 	private cleanupTimer?: Timer;
+	private extensionManager?: { getAll(): Extension[] };
 
 	constructor(config: ManagerConfig, logger: Logger) {
 		this.config = config;
@@ -146,6 +148,11 @@ export class WorkspaceManager {
 
 		// Start idle cleanup timer
 		this.cleanupTimer = setInterval(() => this.cleanupIdle(), 60000);
+	}
+
+	/** Set the extension manager for workspaceReady hooks. Called after extensions load. */
+	setExtensionManager(mgr: { getAll(): Extension[] }): void {
+		this.extensionManager = mgr;
 	}
 
 	async create(
@@ -186,6 +193,28 @@ export class WorkspaceManager {
 			{ sessionId, containerId: sandbox.id },
 			"workspace sandbox created",
 		);
+
+		// Run onWorkspaceReady hooks from all extensions
+		if (this.extensionManager) {
+			const extensions = this.extensionManager.getAll();
+			for (const ext of extensions) {
+				if (ext.onWorkspaceReady) {
+					try {
+						await ext.onWorkspaceReady(sandbox);
+						this.logger.info(
+							{ extension: ext.name, sessionId },
+							"onWorkspaceReady completed",
+						);
+					} catch (err) {
+						this.logger.error(
+							{ err, extension: ext.name, sessionId },
+							"onWorkspaceReady failed",
+						);
+					}
+				}
+			}
+		}
+
 		return sandbox;
 	}
 

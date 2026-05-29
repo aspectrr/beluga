@@ -19,11 +19,6 @@ export interface AgentManifest {
 	version?: string;
 	description?: string;
 	systemPrompt: string;
-	model?: {
-		endpoint?: string;
-		apiKey?: string;
-		model?: string;
-	};
 	maxIterations?: number;
 	maxContextTokens?: number;
 	extensions?: string[];

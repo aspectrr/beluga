@@ -171,7 +171,7 @@ cat > "${CONFIG_DIR}/config.json" <<EOF
   },
   "workspace": {
     "dockerHost": "",
-    "agentImage": "ubuntu:24.04",
+    "agentImage": "beluga/agent-workspace:latest",
     "cpuLimit": "1.0",
     "memoryLimit": "1g",
     "idleTimeout": "1h",
@@ -213,6 +213,16 @@ if [[ ! -f "${CONFIG_DIR}/agents/default/agent.json" ]]; then
   "extensions": []
 }
 EOF
+fi
+
+# ── 6.5. Build workspace image ──────────────────────────────────
+
+info "building workspace image..."
+cd "$BELUGA_DIR"
+if [[ -f workspace.Dockerfile ]]; then
+  docker build -f workspace.Dockerfile -t beluga/agent-workspace . 2>/dev/null || {
+    warn "workspace image build failed — containers will use ubuntu:24.04 fallback"
+  }
 fi
 
 # ── 7. Migrations ────────────────────────────────────────────

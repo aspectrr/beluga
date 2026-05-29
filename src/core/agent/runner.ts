@@ -7,10 +7,11 @@ import { join } from "path";
 import type { Logger } from "pino";
 import type {
 	AgentManifest,
-	AgentModelConfig,
 	ResolvedAgent,
+	ResolvedModelConfig,
 } from "@aspectrr/beluga-sdk";
-import type { Config, LLMConfig } from "../config/config.js";
+import type { Config } from "../config/config.js";
+import { resolveAgentLLM } from "../config/config.js";
 
 export class AgentRunner {
 	private config: Config;
@@ -39,8 +40,8 @@ export class AgentRunner {
 			systemPrompt = "";
 		}
 
-		// Merge model: agent override → global config
-		const model = this.resolveModel(manifest.model);
+		// Resolve model from config.json provider → global llm
+		const model = this.resolveModel(manifest.name);
 
 		return {
 			name: manifest.name,
@@ -52,25 +53,14 @@ export class AgentRunner {
 		};
 	}
 
-	private resolveModel(agentModel?: AgentModelConfig): AgentModelConfig {
-		const global = this.config.llm;
-		if (!agentModel) {
-			return {
-				endpoint: global.endpoint,
-				apiKey: global.apiKey,
-				model: global.model,
-				embeddingModel: global.embeddingModel,
-				embeddingDimensions: global.embeddingDimensions,
-			};
-		}
-
+	private resolveModel(agentName: string): ResolvedModelConfig {
+		const llm = resolveAgentLLM(this.config, agentName);
 		return {
-			endpoint: agentModel.endpoint ?? global.endpoint,
-			apiKey: agentModel.apiKey ?? global.apiKey,
-			model: agentModel.model ?? global.model,
-			embeddingModel: agentModel.embeddingModel ?? global.embeddingModel,
-			embeddingDimensions:
-				agentModel.embeddingDimensions ?? global.embeddingDimensions,
+			endpoint: llm.endpoint,
+			apiKey: llm.apiKey,
+			model: llm.model,
+			embeddingModel: llm.embeddingModel,
+			embeddingDimensions: llm.embeddingDimensions,
 		};
 	}
 }

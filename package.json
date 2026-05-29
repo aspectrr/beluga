@@ -2,6 +2,7 @@
   "name": "beluga",
   "version": "0.1.0",
   "type": "module",
+  "workspaces": ["packages/*"],
   "scripts": {
     "dev": "bun run --watch src/main.ts",
     "start": "bun run src/main.ts",
@@ -12,10 +13,11 @@
     "db:push": "drizzle-kit push",
     "db:studio": "drizzle-kit studio",
     "check": "tsc --noEmit",
-    "test": "bun test"
+    "test": "bun test",
+    "workspace:build": "docker build -f workspace.Dockerfile -t beluga/agent-workspace ."
   },
   "dependencies": {
-    "@aspectrr/beluga-sdk": "^0.1.5",
+    "@aspectrr/beluga-sdk": "workspace:*",
     "@grpc/grpc-js": "^1.14.4",
     "@grpc/proto-loader": "^0.8.1",
     "commander": "^14.0.3",

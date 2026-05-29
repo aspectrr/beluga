@@ -9,7 +9,7 @@ export type { Extension } from "@aspectrr/beluga-sdk";
 
 export class ExtensionManager {
 	private extensions: Array<{
-		ext: import("beluga-sdk").Extension;
+		ext: import("@aspectrr/beluga-sdk").Extension;
 		ctx: ExtensionContext;
 	}> = [];
 	private logger: Logger;
@@ -18,8 +18,16 @@ export class ExtensionManager {
 		this.logger = logger;
 	}
 
-	register(ext: import("beluga-sdk").Extension, ctx: ExtensionContext): void {
+	register(
+		ext: import("@aspectrr/beluga-sdk").Extension,
+		ctx: ExtensionContext,
+	): void {
 		this.extensions.push({ ext, ctx });
+	}
+
+	/** Get all registered extensions (for workspace hooks, etc.) */
+	getAll(): Array<import("@aspectrr/beluga-sdk").Extension> {
+		return this.extensions.map((e) => e.ext);
 	}
 
 	async initAll(): Promise<void> {

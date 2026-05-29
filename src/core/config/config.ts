@@ -38,11 +38,17 @@ export interface ExtensionEntry {
 
 export interface AgentEntry {
 	enabled: boolean;
+	/** Reference a named provider from config.providers. Falls back to global llm. */
+	provider?: string;
+	/** Override model name within the provider. Falls back to provider's default model. */
+	model?: string;
 	[key: string]: unknown;
 }
 
 export interface Config {
 	llm: LLMConfig;
+	/** Named LLM providers that agents can reference by name. */
+	providers: Record<string, LLMConfig>;
 	database: DatabaseConfig;
 	workspace: WorkspaceConfig;
 	extensions: Record<string, ExtensionEntry>;
@@ -88,8 +94,8 @@ export function loadConfig(path: string): Config {
 function parseConfig(raw: Record<string, unknown>): Config {
 	const db = (raw.database ?? {}) as Record<string, unknown>;
 	const ws = (raw.workspace ?? {}) as Record<string, unknown>;
-	const ag = (raw.agent ?? {}) as Record<string, unknown>;
 	const llm = (raw.llm ?? {}) as Record<string, unknown>;
+	const providers = (raw.providers ?? {}) as Record<string, unknown>;
 	const ext = (raw.extensions ?? {}) as Record<string, unknown>;
 	const agents = (raw.agents ?? {}) as Record<string, unknown>;
 	const routing = (raw.routing ?? {}) as Record<string, unknown>;
@@ -117,6 +123,7 @@ function parseConfig(raw: Record<string, unknown>): Config {
 				? Number(llm.embeddingDimensions)
 				: undefined,
 		},
+		providers: parseProviders(providers),
 		database: {
 			host: String(db.host ?? "localhost"),
 			port: Number(db.port ?? 5432),
@@ -144,6 +151,29 @@ function parseConfig(raw: Record<string, unknown>): Config {
 		agents: parseAgentEntries(agents),
 		routing: parseRouting(routing),
 	};
+}
+
+function parseProviders(
+	raw: Record<string, unknown>,
+): Record<string, LLMConfig> {
+	const result: Record<string, LLMConfig> = {};
+	for (const [name, val] of Object.entries(raw)) {
+		if (val && typeof val === "object") {
+			const obj = val as Record<string, unknown>;
+			result[name] = {
+				endpoint: String(obj.endpoint ?? obj.api_endpoint ?? ""),
+				apiKey: String(obj.apiKey ?? obj.api_key ?? ""),
+				model: String(obj.model ?? ""),
+				embeddingModel: obj.embeddingModel
+					? String(obj.embeddingModel)
+					: undefined,
+				embeddingDimensions: obj.embeddingDimensions
+					? Number(obj.embeddingDimensions)
+					: undefined,
+			};
+		}
+	}
+	return result;
 }
 
 function parseExtensions(
@@ -221,13 +251,41 @@ export function enabledExtensions(config: Config): string[] {
 
 export function isAgentEnabled(config: Config, name: string): boolean {
 	const agent = config.agents[name];
-	return agent?.enabled === true;
+	// If not in config at all, default to enabled
+	if (!agent) return true;
+	return agent.enabled !== false;
 }
 
 export function enabledAgents(config: Config): string[] {
 	return Object.entries(config.agents)
 		.filter(([, v]) => v.enabled)
 		.map(([k]) => k);
+}
+
+/** Resolve the LLM config for an agent: named provider → global llm fallback.
+ *  If agent specifies a `model`, it overrides the provider's default model. */
+export function resolveAgentLLM(config: Config, agentName: string): LLMConfig {
+	const entry = config.agents[agentName];
+	const providerName = entry?.provider;
+
+	let llm: LLMConfig;
+	if (providerName) {
+		const provider = config.providers[providerName];
+		if (provider) {
+			llm = provider;
+		} else {
+			llm = config.llm;
+		}
+	} else {
+		llm = config.llm;
+	}
+
+	// Per-agent model override
+	if (entry?.model) {
+		return { ...llm, model: entry.model };
+	}
+
+	return llm;
 }
 
 /** Resolve which agent should handle a session from the given source/sourceId. */

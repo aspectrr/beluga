@@ -9,12 +9,15 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
 // Core
 import {
   loadConfig,
+  type Config,
   enabledExtensions,
   extensionRawConfig,
   enabledAgents,
   resolveRouting,
+  resolveAgentLLM,
 } from "./core/config/config.js";
 import { createPool } from "./core/database/pool.js";
+import { runMigrations } from "./core/database/migrate.js";
 import { ExtDB, defaultExtPermissions } from "./core/database/extdb.js";
 import { EventStore } from "./core/eventstore/store.js";
 import { SessionStore } from "./core/session/store.js";
@@ -33,6 +36,7 @@ import { SessionRouter } from "./core/agent/router.js";
 import { AgentRunner } from "./core/agent/runner.js";
 import { loadAgents, type LoadedAgent } from "./core/agent/loader.js";
 import type { ResolvedAgent } from "@aspectrr/beluga-sdk";
+import { ProviderModelCache } from "./core/model/cache.js";
 
 // CLI
 import { installExtension } from "./cli/extend/install.js";
@@ -43,6 +47,7 @@ import { scaffoldAgent } from "./cli/agent/scaffold.js";
 import { verifyAgent, printAgentVerifyResult } from "./cli/agent/verify.js";
 import { listAgents } from "./cli/agent/list.js";
 import { removeAgent } from "./cli/agent/remove.js";
+import { buildWorkspace } from "./core/workspace/builder.js";
 
 const logger = pino({
   transport: {
@@ -121,6 +126,14 @@ async function startCommand(configPath: string): Promise<void> {
   // 2. Database
   const { db, client: pgClient } = createPool(config.database);
   logger.info("database connected");
+
+  // 2.1. Run migrations (create tables if not exist)
+  await runMigrations(db);
+  logger.info("database migrations complete");
+
+  // 2.5. Provider model cache — polls /models endpoints
+  const modelCache = new ProviderModelCache(config.providers, logger);
+  modelCache.start();
 
   // 3. Stores
   const sessionStore = new SessionStore(db);
@@ -208,16 +221,14 @@ async function startCommand(configPath: string): Promise<void> {
       return null;
     }
 
-    // Build per-agent LLM client
+    // Build per-agent LLM client (model already fully resolved from provider)
     const agentLlm = new LLMClient(
       {
-        endpoint: resolved.model.endpoint ?? config.llm.endpoint,
-        apiKey: resolved.model.apiKey ?? config.llm.apiKey,
-        model: resolved.model.model ?? config.llm.model,
-        embeddingModel:
-          resolved.model.embeddingModel ?? config.llm.embeddingModel,
-        embeddingDimensions:
-          resolved.model.embeddingDimensions ?? config.llm.embeddingDimensions,
+        endpoint: resolved.model.endpoint,
+        apiKey: resolved.model.apiKey,
+        model: resolved.model.model,
+        embeddingModel: resolved.model.embeddingModel,
+        embeddingDimensions: resolved.model.embeddingDimensions,
       },
       logger,
     );
@@ -228,9 +239,8 @@ async function startCommand(configPath: string): Promise<void> {
     );
 
     // Auto-detect context window from model name
-    const modelName = resolved.model.model ?? config.llm.model;
     const contextWindow =
-      resolved.maxContextTokens || (await detectContextWindow(modelName));
+      resolved.maxContextTokens || (await detectContextWindow(resolved.model.model));
     contextBuilder.setMaxTokens(contextWindow);
 
     // Build per-agent tool registry — filtered to this agent's extensions
@@ -304,7 +314,7 @@ async function startCommand(configPath: string): Promise<void> {
       {
         agent: agentName,
         tools: agentRegistry.list().length,
-        model: resolved.model.model ?? config.llm.model,
+        model: resolved.model.model,
         contextWindow,
         maxIterations: resolved.maxIterations || Infinity,
       },
@@ -385,6 +395,9 @@ async function startCommand(configPath: string): Promise<void> {
     "extensions initialized",
   );
 
+  // Wire extension manager into workspace manager for onWorkspaceReady hooks
+  workspaceManager.setExtensionManager(extMgr);
+
   // Pre-build orchestrators for all enabled agents
   for (const agentName of resolvedAgents.keys()) {
     await getOrchestrator(agentName);
@@ -398,8 +411,12 @@ async function startCommand(configPath: string): Promise<void> {
 
   // 9. HTTP server
   const { Hono } = await import("hono");
+  const { streamSSE } = await import("hono/streaming");
+  const { readFileSync: readStatic, existsSync: existsStatic, readdirSync } = await import("fs");
 
   const app = new Hono();
+
+  // ── Health ──────────────────────────────────────────────────
 
   app.get("/health", (c) => {
     return c.json({
@@ -417,6 +434,278 @@ async function startCommand(configPath: string): Promise<void> {
     return c.json({ received: true });
   });
 
+  // ── API: Providers ──────────────────────────────────────────
+
+  app.get("/api/providers", (c) => {
+    const list = Object.entries(config.providers).map(([name, p]) => ({
+      name,
+      endpoint: p.endpoint,
+      apiKey: p.apiKey ? "••••••" : "", // never expose keys
+      model: p.model,
+      embeddingModel: p.embeddingModel,
+      embeddingDimensions: p.embeddingDimensions,
+    }));
+    return c.json(list);
+  });
+
+  app.put("/api/providers/:name", async (c) => {
+    const name = c.req.param("name");
+    const body = await c.req.json();
+    config.providers[name] = {
+      endpoint: String(body.endpoint ?? ""),
+      apiKey: String(body.apiKey ?? ""),
+      model: String(body.model ?? ""),
+      embeddingModel: body.embeddingModel ? String(body.embeddingModel) : undefined,
+      embeddingDimensions: body.embeddingDimensions ? Number(body.embeddingDimensions) : undefined,
+    };
+    modelCache.setProvider(name, config.providers[name]);
+    // Persist to config.json
+    await persistConfig(configPath, config);
+    return c.json({ name, ...config.providers[name] });
+  });
+
+  app.delete("/api/providers/:name", async (c) => {
+    const name = c.req.param("name");
+    delete config.providers[name];
+    modelCache.removeProvider(name);
+    await persistConfig(configPath, config);
+    return c.json({ deleted: true });
+  });
+
+  // ── API: Provider Models ────────────────────────────────────
+
+  app.get("/api/providers/:name/models", async (c) => {
+    const name = c.req.param("name");
+    const models = modelCache.getModels(name);
+    // Auto-refresh if empty or stale
+    if (models.length === 0) {
+      const refreshed = await modelCache.refresh(name);
+      return c.json(refreshed);
+    }
+    return c.json(models);
+  });
+
+  app.get("/api/models", (c) => {
+    return c.json(modelCache.getAllModels());
+  });
+
+  // ── API: Agents ─────────────────────────────────────────────
+
+  app.get("/api/agents", (c) => {
+    const allAgents = Array.from(resolvedAgents.values());
+    return c.json(allAgents.map(a => {
+      const agentEntry = config.agents[a.name] as Record<string, unknown> | undefined;
+      const modelOverride = agentEntry?.model as string | undefined;
+      return {
+        name: a.name,
+        enabled: isAgentEnabled(config, a.name),
+        provider: agentEntry?.provider as string | null ?? null,
+        model: modelOverride || a.model.model,
+        extensions: a.extensions,
+        maxIterations: a.maxIterations || Infinity,
+      };
+    }));
+  });
+
+  app.get("/api/agents/:name", (c) => {
+    const name = c.req.param("name");
+    const resolved = resolvedAgents.get(name);
+    if (!resolved) return c.json({ error: "agent not found" }, 404);
+    const agentEntry = config.agents[name] as Record<string, unknown> | undefined;
+    const modelOverride = agentEntry?.model as string | undefined;
+    return c.json({
+      name: resolved.name,
+      enabled: isAgentEnabled(config, resolved.name),
+      provider: agentEntry?.provider as string | null ?? null,
+      model: modelOverride || resolved.model.model,
+      extensions: resolved.extensions,
+      maxIterations: resolved.maxIterations || Infinity,
+    });
+  });
+
+  app.put("/api/agents/:name", async (c) => {
+    const name = c.req.param("name");
+    const body = await c.req.json();
+    if (!config.agents[name]) {
+      config.agents[name] = { enabled: true };
+    }
+    const entry = config.agents[name] as Record<string, unknown>;
+    if (body.enabled !== undefined) entry.enabled = body.enabled;
+    if (body.provider !== undefined) entry.provider = body.provider || undefined;
+    if (body.model !== undefined) entry.model = body.model || undefined;
+
+    // Re-resolve the agent's LLM config so runtime picks up changes
+    const resolved = resolvedAgents.get(name);
+    if (resolved) {
+      const llm = resolveAgentLLM(config, name);
+      resolved.model = {
+        endpoint: llm.endpoint,
+        apiKey: llm.apiKey,
+        model: llm.model,
+        embeddingModel: llm.embeddingModel,
+        embeddingDimensions: llm.embeddingDimensions,
+      };
+      // Rebuild orchestrator so next session uses new model
+      agentOrchestrators.delete(name);
+    }
+
+    await persistConfig(configPath, config);
+    const agentEntry = config.agents[name] as Record<string, unknown> | undefined;
+    const modelOverride = agentEntry?.model as string | undefined;
+    return c.json({
+      name,
+      enabled: entry.enabled,
+      provider: entry.provider ?? null,
+      model: modelOverride || resolved?.model.model || null,
+    });
+  });
+
+  // ── API: Sessions ──────────────────────────────────────────
+
+  app.get("/api/sessions", async (c) => {
+    const limit = parseInt(c.req.query("limit") ?? "50");
+    // Get all recent sessions — try completed, then running, then pending
+    const [completed, running, pending] = await Promise.all([
+      sessionStore.listByStatus("completed", limit),
+      sessionStore.listByStatus("running", limit),
+      sessionStore.listByStatus("pending", limit),
+    ]);
+    const all = [...running, ...pending, ...completed].slice(0, limit);
+    return c.json(all.map(s => ({
+      id: s.id,
+      source: s.source,
+      sourceId: s.sourceId,
+      agent: s.agent,
+      status: s.status,
+      createdAt: s.createdAt,
+      updatedAt: s.updatedAt,
+    })));
+  });
+
+  app.post("/api/sessions", async (c) => {
+    const body = await c.req.json();
+    const source = String(body.source ?? "chat");
+    const sourceId = String(body.sourceId ?? crypto.randomUUID());
+    const message = String(body.message ?? "");
+    const agent = body.agent ? String(body.agent) : undefined;
+
+    // Override routing if agent specified
+    if (agent) {
+      const session = await createSession(source, sourceId, message, { agent });
+      return c.json(session);
+    }
+    const session = await createSession(source, sourceId, message);
+    return c.json({
+      id: session.id,
+      source: session.source,
+      sourceId: session.sourceId,
+      agent: session.agent,
+      status: session.status,
+      createdAt: session.createdAt,
+      updatedAt: session.updatedAt,
+    });
+  });
+
+  app.post("/api/sessions/:id/messages", async (c) => {
+    const sessionId = c.req.param("id");
+    const body = await c.req.json();
+    const message = String(body.message ?? "");
+    const session = await continueSession(sessionId, message);
+    return c.json({
+      id: session.id,
+      status: session.status,
+    });
+  });
+
+  // ── API: Events ────────────────────────────────────────────
+
+  app.get("/api/sessions/:id/events", async (c) => {
+    const sessionId = c.req.param("id");
+    const events_list = await eventStore.getEvents(sessionId, 0, 10000);
+    return c.json(events_list.map(e => ({
+      id: e.id,
+      sessionId: e.sessionId,
+      seq: e.seq,
+      type: e.type,
+      data: e.data,
+      createdAt: e.createdAt,
+    })));
+  });
+
+  // SSE stream for live events
+  app.get("/api/sessions/:id/events/stream", async (c) => {
+    const sessionId = c.req.param("id");
+    const afterSeq = parseInt(c.req.query("afterSeq") ?? "0");
+
+    return streamSSE(c, async (stream) => {
+      // Send existing events first
+      const existing = await eventStore.getEvents(sessionId, afterSeq, 10000);
+      for (const evt of existing) {
+        await stream.writeSSE({
+          event: "event",
+          data: JSON.stringify({
+            id: evt.id,
+            sessionId: evt.sessionId,
+            seq: evt.seq,
+            type: evt.type,
+            data: evt.data,
+            createdAt: evt.createdAt,
+          }),
+        });
+      }
+
+      // Stream live events
+      const watcher = (event: any) => {
+        stream.writeSSE({
+          event: "event",
+          data: JSON.stringify({
+            id: event.id,
+            sessionId: event.sessionId,
+            seq: event.seq,
+            type: event.type,
+            data: event.data,
+            createdAt: event.createdAt,
+          }),
+        }).catch(() => {});
+      };
+
+      eventStore["addWatcher"](sessionId, watcher);
+
+      // Keep connection alive
+      const keepAlive = setInterval(() => {
+        stream.writeSSE({ event: "ping", data: "" }).catch(() => {});
+      }, 15000);
+
+      // Wait for abort
+      await new Promise<void>((resolve) => {
+        c.req.raw.signal.addEventListener("abort", () => resolve(), { once: true });
+      });
+
+      clearInterval(keepAlive);
+      eventStore["removeWatcher"](sessionId, watcher);
+    });
+  });
+
+  // ── Static UI ─────────────────────────────────────────────
+
+  const uiDist = resolve(process.cwd(), "ui/dist");
+  if (existsStatic(uiDist)) {
+    // Serve built React app
+    app.get("/*", async (c) => {
+      const urlPath = c.req.path;
+      // Try exact file first
+      const filePath = resolve(uiDist, urlPath.slice(1) || "index.html");
+      if (existsStatic(filePath) && filePath.startsWith(uiDist)) {
+        const file = Bun.file(filePath);
+        return new Response(file);
+      }
+      // SPA fallback
+      const indexFile = Bun.file(resolve(uiDist, "index.html"));
+      return new Response(indexFile);
+    });
+    logger.info({ dir: uiDist }, "serving UI");
+  }
+
   const port = parseInt(process.env.BELUGA_PORT ?? "8080");
   Bun.serve({ fetch: app.fetch, port });
 
@@ -426,6 +715,7 @@ async function startCommand(configPath: string): Promise<void> {
   const shutdown = async () => {
     logger.info("shutting down...");
 
+    modelCache.stop();
     abortController.abort();
     await extMgr.stopAll();
     await workspaceManager.close();
@@ -449,6 +739,42 @@ function isAgentEnabled(
   return entry.enabled !== false;
 }
 
+/** Persist runtime config back to disk. */
+async function persistConfig(configPath: string, config: Config): Promise<void> {
+  // Build a serializable version — expose providers with real keys for save
+  const serializable = {
+    llm: config.llm,
+    providers: config.providers,
+    database: config.database,
+    workspace: {
+      dockerHost: config.workspace.dockerHost,
+      agentImage: config.workspace.agentImage,
+      cpuLimit: config.workspace.cpuLimit,
+      memoryLimit: config.workspace.memoryLimit,
+      idleTimeout: `${config.workspace.idleTimeout / 3600}h`,
+      networkMode: config.workspace.networkMode,
+    },
+    extensions: config.extensions,
+    agents: config.agents,
+    routing: config.routing,
+  };
+
+  try {
+    writeFileSync(configPath, JSON.stringify(serializable, null, 2) + "\n");
+  } catch (err: any) {
+    if (err?.code === "EROFS" || err?.code === "EACCES") {
+      // Config mount is read-only — write to data dir overlay instead
+      const dataDir = process.env.BELUGA_DATA_DIR ?? "/var/lib/beluga";
+      mkdirSync(dataDir, { recursive: true });
+      const overlayPath = join(dataDir, "config.json");
+      writeFileSync(overlayPath, JSON.stringify(serializable, null, 2) + "\n");
+      logger.warn({ overlayPath }, "config mount read-only, wrote to data overlay");
+    } else {
+      throw err;
+    }
+  }
+}
+
 // ── Onboard command ───────────────────────────────────────────
 
 async function onboardCommand(): Promise<void> {
@@ -466,6 +792,7 @@ async function onboardCommand(): Promise<void> {
         apiKey: "${LLM_API_KEY}",
         model: "${LLM_MODEL}",
       },
+      providers: {},
       database: {
         host: "localhost",
         port: 5432,
@@ -477,7 +804,7 @@ async function onboardCommand(): Promise<void> {
       },
       workspace: {
         dockerHost: "",
-        agentImage: "ubuntu:24.04",
+        agentImage: "beluga/agent-workspace:latest",
         cpuLimit: "1.0",
         memoryLimit: "1g",
         idleTimeout: "1h",
@@ -651,6 +978,49 @@ agentCmd
   .description("Remove an installed agent")
   .action(async (name) => {
     removeAgent(name, process.cwd());
+  });
+
+// ── Workspace subcommands ─────────────────────────────────────
+
+const workspaceCmd = program
+  .command("workspace")
+  .description("Manage workspace images");
+
+workspaceCmd
+  .command("build")
+  .description("Build workspace image with packages from all extensions")
+  .option("-c, --config <path>", "config file path", ".beluga/config.json")
+  .option("--force", "rebuild even if unchanged", false)
+  .option("--base-image <image>", "base image name", "beluga/agent-workspace:latest")
+  .option("--output-image <image>", "output image name")
+  .action(async (opts) => {
+    const configPath = resolve(opts.config);
+    const belugaDir = resolve(configPath, "..");
+    const baseImage = opts.baseImage;
+    const outputImage = opts.outputImage ?? baseImage;
+    const baseDockerfile = resolve(belugaDir, "..", "workspace.Dockerfile");
+
+    try {
+      const result = await buildWorkspace(
+        {
+          belugaDir,
+          baseImage,
+          outputImage,
+          baseDockerfile,
+        },
+        logger,
+        { force: opts.force },
+      );
+
+      if (result.built) {
+        console.log(`✓ workspace image built: ${result.image} (fingerprint: ${result.fingerprint})`);
+      } else {
+        console.log(`✓ workspace image up to date: ${result.image}`);
+      }
+    } catch (err) {
+      console.error(`✗ build failed: ${err instanceof Error ? err.message : err}`);
+      process.exit(1);
+    }
   });
 
 program.parse();

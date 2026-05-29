@@ -22,6 +22,14 @@ export interface ExtensionManifest {
 		env_var?: string;
 		secret?: boolean;
 	}>;
+	/** Declarative workspace requirements merged across all extensions at build time. */
+	workspace?: {
+		python?: string[];
+		node?: string[];
+		system?: string[];
+		run?: string[];
+		env?: Record<string, string>;
+	};
 }
 
 interface LoadedModule {
@@ -64,6 +72,49 @@ export async function loadRuntimeExtensions(
 	}
 }
 
+/** Scan extensions dir and return merged workspace requirements from all manifests. */
+export async function collectWorkspaceRequirements(
+	extensionsDir: string,
+	logger: Logger,
+): Promise<import("@aspectrr/beluga-sdk").WorkspaceRequirements> {
+	const merged: import("@aspectrr/beluga-sdk").WorkspaceRequirements = {};
+
+	let entries: string[];
+	try {
+		entries = await readdir(extensionsDir);
+	} catch {
+		return merged;
+	}
+
+	for (const entry of entries) {
+		const extPath = join(extensionsDir, entry);
+		const extStat = await stat(extPath);
+		if (!extStat.isDirectory()) continue;
+
+		const manifest = await loadManifest(extPath, logger);
+		if (manifest?.workspace) {
+			const ws = manifest.workspace;
+			if (ws.python?.length) {
+				merged.python = [...(merged.python ?? []), ...ws.python];
+			}
+			if (ws.node?.length) {
+				merged.node = [...(merged.node ?? []), ...ws.node];
+			}
+			if (ws.system?.length) {
+				merged.system = [...(merged.system ?? []), ...ws.system];
+			}
+			if (ws.run?.length) {
+				merged.run = [...(merged.run ?? []), ...ws.run];
+			}
+			if (ws.env) {
+				merged.env = { ...(merged.env ?? {}), ...ws.env };
+			}
+		}
+	}
+
+	return merged;
+}
+
 async function loadExtension(
 	dir: string,
 	logger: Logger,
@@ -92,6 +143,10 @@ async function loadExtension(
 		} else {
 			ext = ExtClass as Extension;
 		}
+		// Merge manifest workspace into extension (code-level takes precedence)
+		if (manifest.workspace && !ext.workspace) {
+			ext.workspace = manifest.workspace;
+		}
 		return { ext, name: extName };
 	}
 
@@ -100,6 +155,7 @@ async function loadExtension(
 		return {
 			ext: {
 				name: extName,
+				workspace: manifest.workspace,
 				init: mod.init ?? (async () => {}),
 				start: mod.start ?? (async () => {}),
 				stop: mod.stop ?? (async () => {}),

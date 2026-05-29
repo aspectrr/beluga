@@ -2,7 +2,7 @@
 // Public API for building Beluga extensions.
 
 // Extension lifecycle
-export type { Extension } from "./extension.js";
+export type { Extension, WorkspaceRequirements } from "./extension.js";
 
 // Extension context (what gets passed to init)
 export type {
@@ -27,7 +27,7 @@ export {
 // Agent types
 export type {
 	AgentManifest,
-	AgentModelConfig,
+	ResolvedModelConfig,
 	AgentConfigField,
 	ResolvedAgent,
 	RoutingEntry,

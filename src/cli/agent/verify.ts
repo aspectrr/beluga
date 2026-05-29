@@ -52,15 +52,6 @@ export async function verifyAgent(path: string): Promise<AgentVerifyResult> {
 		}
 	}
 
-	// Validate model config if present
-	if (manifest.model) {
-		if (!manifest.model.model && !manifest.model.endpoint) {
-			warnings.push(
-				"model config present but no 'model' or 'endpoint' specified — will use global config",
-			);
-		}
-	}
-
 	return {
 		valid: errors.length === 0,
 		errors,
