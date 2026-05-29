@@ -229,14 +229,29 @@ fi
 
 info "running database migrations..."
 cd "$BELUGA_DIR"
-BELUGA_DB_HOST=127.0.0.1 \
-BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
-  bun run db:migrate || {
-    warn "drizzle migrate failed, trying db:push..."
-    BELUGA_DB_HOST=127.0.0.1 \
-    BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
-      bun run db:push --force
-  }
+
+run_migrations() {
+  BELUGA_DB_HOST=127.0.0.1 \
+  BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
+    bun run db:migrate 2>&1
+}
+
+run_push() {
+  BELUGA_DB_HOST=127.0.0.1 \
+  BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
+    bun x drizzle-kit push 2>&1
+}
+
+if ! run_migrations; then
+  warn "drizzle migrate failed, trying db:push..."
+  if ! run_push; then
+    warn "db:push failed, resetting database and retrying..."
+    docker exec beluga-postgres psql -U beluga -c "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>&1
+    if ! run_migrations && ! run_push; then
+      error "database migrations failed after reset. check logs above."
+    fi
+  fi
+fi
 
 # ── 8. Systemd service ───────────────────────────────────────
 
