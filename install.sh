@@ -231,13 +231,13 @@ info "running database migrations..."
 cd "$BELUGA_DIR"
 
 run_migrations() {
-  BELUGA_DB_HOST=127.0.0.1 \
+  NO_COLOR=1 BELUGA_DB_HOST=127.0.0.1 \
   BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
     bun run db:migrate 2>&1
 }
 
 run_push() {
-  BELUGA_DB_HOST=127.0.0.1 \
+  NO_COLOR=1 BELUGA_DB_HOST=127.0.0.1 \
   BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
     bun x drizzle-kit push 2>&1
 }
