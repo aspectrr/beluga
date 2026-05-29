@@ -41,7 +41,9 @@ BELUGA_BRANCH="${BELUGA_BRANCH:-main}"
 BELUGA_DIR="${BELUGA_DIR:-/opt/beluga}"
 if [[ -z "${BELUGA_DB_PASSWORD:-}" ]]; then
   # Re-use existing password from a previous install if available
-  existing_pw=$(docker inspect beluga-postgres --format '{{range .Config.Env}}{{if eq (slice . 0 20) "POSTGRES_PASSWORD="}}{{slice . 20}}{{end}}{{end}}' 2>/dev/null || true)
+  existing_pw=$(docker inspect beluga-postgres \
+    --format '{{range .Config.Env}}{{println .}}{{end}}' 2>/dev/null \
+    | grep '^POSTGRES_PASSWORD=' | cut -d= -f2 || true)
   BELUGA_DB_PASSWORD="${existing_pw:-$(openssl rand -hex 16)}"
 fi
 BELUGA_PORT="${BELUGA_PORT:-8080}"
@@ -146,6 +148,16 @@ if ! docker ps --format '{{.Names}}' | grep -q '^beluga-postgres$'; then
   done
 else
   info "postgres already running"
+  # Ensure our password matches the running container
+  if ! docker exec beluga-postgres psql -U beluga -c "SELECT 1" &>/dev/null; then
+    # Password mismatch — update postgres user to match our password
+    info "updating postgres user password..."
+    docker exec beluga-postgres psql -U beluga -d beluga -c \
+      "ALTER USER beluga WITH PASSWORD '${BELUGA_DB_PASSWORD}';" 2>/dev/null \
+    || docker exec beluga-postgres psql -U postgres -d beluga -c \
+      "ALTER USER beluga WITH PASSWORD '${BELUGA_DB_PASSWORD}';" 2>/dev/null \
+    || warn "could not update postgres password"
+  fi
 fi
 
 # ── 6. Config ────────────────────────────────────────────────
