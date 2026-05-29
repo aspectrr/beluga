@@ -39,7 +39,11 @@ fi
 BELUGA_REPO="${BELUGA_REPO:-https://github.com/aspectrr/beluga}"
 BELUGA_BRANCH="${BELUGA_BRANCH:-main}"
 BELUGA_DIR="${BELUGA_DIR:-/opt/beluga}"
-BELUGA_DB_PASSWORD="${BELUGA_DB_PASSWORD:-$(openssl rand -hex 16)}"
+if [[ -z "${BELUGA_DB_PASSWORD:-}" ]]; then
+  # Re-use existing password from a previous install if available
+  existing_pw=$(docker inspect beluga-postgres --format '{{range .Config.Env}}{{if eq (slice . 0 20) "POSTGRES_PASSWORD="}}{{slice . 20}}{{end}}{{end}}' 2>/dev/null || true)
+  BELUGA_DB_PASSWORD="${existing_pw:-$(openssl rand -hex 16)}"
+fi
 BELUGA_PORT="${BELUGA_PORT:-8080}"
 CONFIG_DIR="/etc/beluga"
 
@@ -231,34 +235,25 @@ info "running database migrations..."
 cd "$BELUGA_DIR"
 
 apply_sql_migrations() {
-  # Apply migration SQL files directly via psql
   for sql_file in drizzle/*.sql; do
     [[ -f "$sql_file" ]] || continue
     info "applying $sql_file ..."
-    # Split on drizzle statement-breakpoint comments, execute each statement
     sed 's/--> statement-breakpoint/;/g' "$sql_file" \
       | docker exec -i beluga-postgres psql -U beluga -v ON_ERROR_STOP=1 2>&1
   done
 }
 
-apply_drizzle_push() {
-  NO_COLOR=1 TERM=dumb CI=true BELUGA_DB_HOST=127.0.0.1 \
-  BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
-    bun x drizzle-kit push 2>&1
-}
-
-# Try drizzle-kit migrate first
 if ! NO_COLOR=1 TERM=dumb CI=true BELUGA_DB_HOST=127.0.0.1 \
      BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
      bun run db:migrate 2>&1; then
   warn "drizzle migrate failed, trying db:push..."
-  if ! apply_drizzle_push; then
+  if ! NO_COLOR=1 TERM=dumb CI=true BELUGA_DB_HOST=127.0.0.1 \
+       BELUGA_DB_PASSWORD="$BELUGA_DB_PASSWORD" \
+       bun x drizzle-kit push 2>&1; then
     warn "db:push failed, resetting database and applying SQL directly..."
     docker exec beluga-postgres psql -U beluga -c \
       "DROP SCHEMA public CASCADE; CREATE SCHEMA public;" 2>&1
-    if ! apply_sql_migrations && ! apply_drizzle_push; then
-      error "database migrations failed after reset. check logs above."
-    fi
+    apply_sql_migrations || error "database migrations failed. check logs above."
   fi
 fi
 
