@@ -36,7 +36,7 @@ if [[ ! -f /etc/os-release ]]; then
 fi
 
 # defaults
-BELUGA_REPO="${BELUGA_REPO:-}"
+BELUGA_REPO="${BELUGA_REPO:-https://github.com/aspectrr/beluga}"
 BELUGA_BRANCH="${BELUGA_BRANCH:-main}"
 BELUGA_DIR="${BELUGA_DIR:-/opt/beluga}"
 BELUGA_DB_PASSWORD="${BELUGA_DB_PASSWORD:-$(openssl rand -hex 16)}"
