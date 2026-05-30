@@ -69,7 +69,7 @@ read -rp "LLM endpoint [https://api.openai.com/v1]: " LLM_API_ENDPOINT
 LLM_API_ENDPOINT="${LLM_API_ENDPOINT:-https://api.openai.com/v1}"
 read -rp "LLM model [gpt-4o]: " LLM_MODEL
 LLM_MODEL="${LLM_MODEL:-gpt-4o}"
-read -rp "Domain for HTTPS (e.g. beluga.example.com, leave blank for HTTP only): " BELUGA_DOMAIN
+read -rp "Domain or public IP for HTTPS (e.g. beluga.example.com or 1.2.3.4, leave blank for HTTP only): " BELUGA_DOMAIN
 
 echo ""
 info "install dir:    ${BELUGA_DIR}"
@@ -78,7 +78,18 @@ info "db password:    (generated)"
 info "http port:      ${BELUGA_PORT}"
 info "llm endpoint:   ${LLM_API_ENDPOINT}"
 info "llm model:      ${LLM_MODEL}"
-info "domain:         ${BELUGA_DOMAIN:-none (HTTP only)}"
+# Detect if target is an IP (needs internal TLS) vs domain (Let's Encrypt)
+if [[ -n "${BELUGA_DOMAIN:-}" ]]; then
+  if [[ "${BELUGA_DOMAIN}" =~ ^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$ ]]; then
+    BELUGA_TLS_INTERNAL=true
+    info "domain:         ${BELUGA_DOMAIN} (self-signed TLS — browsers will warn)"
+  else
+    BELUGA_TLS_INTERNAL=false
+    info "domain:         ${BELUGA_DOMAIN} (auto TLS via Let's Encrypt)"
+  fi
+else
+  info "domain:         none (HTTP only)"
+fi
 echo ""
 read -rp "look good? [Y/n] " confirm
 [[ "${confirm,,}" == "n" ]] && error "aborted."
@@ -323,9 +334,14 @@ systemctl restart beluga
 
 if [[ -n "${BELUGA_DOMAIN:-}" ]]; then
   info "configuring caddy for ${BELUGA_DOMAIN}..."
+  tls_directive=""
+  if [[ "${BELUGA_TLS_INTERNAL}" == "true" ]]; then
+    tls_directive="\ttls internal"
+  fi
   cat > /etc/caddy/Caddyfile <<CADDYFILE
 ${BELUGA_DOMAIN} {
 	reverse_proxy localhost:${BELUGA_PORT}
+${tls_directive}
 }
 CADDYFILE
   systemctl restart caddy
