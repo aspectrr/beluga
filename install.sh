@@ -55,21 +55,36 @@ echo ""
 
 # ── Prompt for repo if not set ───────────────────────────────
 
-if [[ -z "$BELUGA_REPO" ]]; then
-  read -rp "Git repo URL (e.g. https://github.com/user/beluga): " BELUGA_REPO
-  if [[ -z "$BELUGA_REPO" ]]; then
-    error "repo URL required. set BELUGA_REPO or re-run."
+if [[ -z "${BELUGA_REPO:-}" ]]; then
+  if [[ -t 0 ]]; then
+    read -rp "Git repo URL (e.g. https://github.com/user/beluga): " BELUGA_REPO
+  fi
+  if [[ -z "${BELUGA_REPO:-}" ]]; then
+    error "repo URL required. set BELUGA_REPO or re-run interactively."
   fi
 fi
 
 # ── Prompt for LLM config ────────────────────────────────────
 
-read -rp "LLM API key: " LLM_API_KEY
-read -rp "LLM endpoint [https://api.openai.com/v1]: " LLM_API_ENDPOINT
+if [[ -z "${LLM_API_KEY:-}" ]] && [[ -t 0 ]]; then
+  read -rp "LLM API key: " LLM_API_KEY
+fi
+[[ -n "${LLM_API_KEY:-}" ]] || error "LLM API key required. set LLM_API_KEY or run interactively."
+
+if [[ -z "${LLM_API_ENDPOINT:-}" ]] && [[ -t 0 ]]; then
+  read -rp "LLM endpoint [https://api.openai.com/v1]: " LLM_API_ENDPOINT
+fi
 LLM_API_ENDPOINT="${LLM_API_ENDPOINT:-https://api.openai.com/v1}"
-read -rp "LLM model [gpt-4o]: " LLM_MODEL
+
+if [[ -z "${LLM_MODEL:-}" ]] && [[ -t 0 ]]; then
+  read -rp "LLM model [gpt-4o]: " LLM_MODEL
+fi
 LLM_MODEL="${LLM_MODEL:-gpt-4o}"
-read -rp "Domain or public IP for HTTPS (e.g. beluga.example.com or 1.2.3.4, leave blank for HTTP only): " BELUGA_DOMAIN
+
+if [[ -z "${BELUGA_DOMAIN:-}" ]] && [[ -t 0 ]]; then
+  read -rp "Domain or public IP for HTTPS (e.g. beluga.example.com or 1.2.3.4, leave blank for HTTP only): " BELUGA_DOMAIN
+fi
+BELUGA_DOMAIN="${BELUGA_DOMAIN:-}"
 
 echo ""
 info "install dir:    ${BELUGA_DIR}"
