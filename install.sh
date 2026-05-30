@@ -13,6 +13,7 @@ set -euo pipefail
 #   BELUGA_DIR         - install dir (default: /opt/beluga)
 #   BELUGA_DB_PASSWORD - postgres password (default: generated)
 #   BELUGA_PORT        - HTTP port (default: 8080)
+#   BELUGA_DOMAIN      - domain for HTTPS via Caddy (default: prompt)
 # ─────────────────────────────────────────────────────────────
 
 BOLD="\033[1m"
@@ -68,6 +69,7 @@ read -rp "LLM endpoint [https://api.openai.com/v1]: " LLM_API_ENDPOINT
 LLM_API_ENDPOINT="${LLM_API_ENDPOINT:-https://api.openai.com/v1}"
 read -rp "LLM model [gpt-4o]: " LLM_MODEL
 LLM_MODEL="${LLM_MODEL:-gpt-4o}"
+read -rp "Domain for HTTPS (e.g. beluga.example.com, leave blank for HTTP only): " BELUGA_DOMAIN
 
 echo ""
 info "install dir:    ${BELUGA_DIR}"
@@ -76,6 +78,7 @@ info "db password:    (generated)"
 info "http port:      ${BELUGA_PORT}"
 info "llm endpoint:   ${LLM_API_ENDPOINT}"
 info "llm model:      ${LLM_MODEL}"
+info "domain:         ${BELUGA_DOMAIN:-none (HTTP only)}"
 echo ""
 read -rp "look good? [Y/n] " confirm
 [[ "${confirm,,}" == "n" ]] && error "aborted."
@@ -107,6 +110,21 @@ if ! command -v docker &>/dev/null; then
   systemctl enable --now docker
 else
   info "docker already installed ($(docker --version))"
+fi
+
+# ── 3.5. Caddy ─────────────────────────────────────────────────
+
+if [[ -n "${BELUGA_DOMAIN:-}" ]]; then
+  if ! command -v caddy &>/dev/null; then
+    info "installing caddy..."
+    apt-get install -y -qq debian-keyring debian-archive-keyring apt-transport-https curl >/dev/null
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/gpg.key' | gpg --dearmor -o /usr/share/keyrings/caddy-stable-archive-keyring.gpg 2>/dev/null
+    curl -1sLf 'https://dl.cloudsmith.io/public/caddy/stable/debian.deb.txt' | tee /etc/apt/sources.list.d/caddy-stable.list >/dev/null
+    apt-get update -qq 2>/dev/null
+    apt-get install -y -qq caddy >/dev/null
+  else
+    info "caddy already installed ($(caddy version))"
+  fi
 fi
 
 # ── 4. Clone repo ─────────────────────────────────────────────
@@ -301,7 +319,19 @@ systemctl daemon-reload
 systemctl enable beluga
 systemctl restart beluga
 
-# ── 9. Done ──────────────────────────────────────────────────
+# ── 9. Caddy reverse proxy ───────────────────────────────────
+
+if [[ -n "${BELUGA_DOMAIN:-}" ]]; then
+  info "configuring caddy for ${BELUGA_DOMAIN}..."
+  cat > /etc/caddy/Caddyfile <<CADDYFILE
+${BELUGA_DOMAIN} {
+	reverse_proxy localhost:${BELUGA_PORT}
+}
+CADDYFILE
+  systemctl restart caddy
+fi
+
+# ── 10. Done ─────────────────────────────────────────────────
 
 sleep 2
 if systemctl is-active --quiet beluga; then
@@ -319,10 +349,16 @@ echo "  config:    ${CONFIG_DIR}/config.json"
 echo "  logs:      journalctl -u beluga -f"
 echo "  restart:   systemctl restart beluga"
 echo "  stop:      systemctl stop beluga"
-echo "  health:    curl http://localhost:${BELUGA_PORT}/health"
+if [[ -n "${BELUGA_DOMAIN:-}" ]]; then
+  echo "  health:    curl https://${BELUGA_DOMAIN}/health"
+  echo "  url:       https://${BELUGA_DOMAIN}"
+  echo "  proxy:     caddy (auto HTTPS via Let's Encrypt)"
+else
+  echo "  health:    curl http://localhost:${BELUGA_PORT}/health"
+  echo ""
+  echo -e "  ${YELLOW}next: re-run with a domain to enable HTTPS via Caddy${RESET}"
+fi
 echo ""
 echo "  database:  docker exec -it beluga-postgres psql -U beluga"
 echo "  db pass:   stored in systemd env (BELUGA_DB_PASSWORD)"
-echo ""
-echo -e "  ${YELLOW}next: put a reverse proxy (caddy/nginx) in front for HTTPS${RESET}"
 echo ""
