@@ -7,6 +7,7 @@ import { join, resolve } from "path";
 import type { Logger } from "pino";
 import type { Extension, ExtensionManager } from "./manager.js";
 import type { ExtensionContext } from "./context.js";
+import type { Config } from "../config/config.js";
 
 export interface ExtensionManifest {
 	name: string;
@@ -45,6 +46,8 @@ export async function loadRuntimeExtensions(
 	manager: ExtensionManager,
 	getCtx: (name: string) => ExtensionContext,
 	logger: Logger,
+	isEnabled?: (name: string) => boolean,
+	getConfig?: () => Config,
 ): Promise<void> {
 	let entries: string[];
 	try {
@@ -54,20 +57,104 @@ export async function loadRuntimeExtensions(
 		return;
 	}
 
+	// Track which base extensions were loaded (dir → manifest name)
+	const loadedBases = new Map<string, string>();
+
+	// Determine which base names are only used as code sources for aliases.
+	// These should be loaded (for module code) but NOT registered with the manager.
+	const aliasOnlyBases = new Set<string>();
+	if (getConfig) {
+		for (const entry of Object.values(getConfig().extensions)) {
+			if (entry.enabled && entry.extends) {
+				aliasOnlyBases.add(entry.extends);
+			}
+		}
+	}
+
 	for (const entry of entries) {
 		const extPath = join(extensionsDir, entry);
 		const extStat = await stat(extPath);
 		if (!extStat.isDirectory()) continue;
 
+		// Check manifest name for enabled check before importing the module
+		const manifest = await loadManifest(extPath, logger);
+		if (manifest?.name && isEnabled && !isEnabled(manifest.name)) {
+			logger.info({ extension: manifest.name }, "skipping disabled extension");
+			continue;
+		}
+
 		try {
 			const result = await loadExtension(extPath, logger);
 			if (result) {
+				loadedBases.set(entry, result.name);
+
+				// Skip registration if this base only serves as code source for aliases
+				// (no direct config entry of its own)
+				// Skip registration if this base has no config entry and only
+				// serves as code source for aliases.
+				const config = getConfig?.();
+				if (
+					config &&
+					aliasOnlyBases.has(result.name) &&
+					!config.extensions[result.name]
+				) {
+					logger.info(
+						{ extension: result.name },
+						"base extension loaded as code source for aliases (not registered)",
+					);
+					continue;
+				}
+
 				const ctx = getCtx(result.name);
 				manager.register(result.ext, ctx);
 				logger.info({ extension: result.name }, "loaded runtime extension");
 			}
 		} catch (err) {
 			logger.error({ err, path: extPath }, "failed to load runtime extension");
+		}
+	}
+
+	// ── Load aliases (extensions with `extends` field in config) ──
+	if (!getConfig) return;
+	const config = getConfig();
+
+	// Find all enabled alias entries
+	const aliases: Array<{ aliasName: string; baseName: string }> = [];
+	for (const [name, entry] of Object.entries(config.extensions)) {
+		if (!entry.enabled || !entry.extends) continue;
+		// Skip if this alias name IS the base extension itself
+		if (entry.extends === name) continue;
+		aliases.push({ aliasName: name, baseName: entry.extends });
+	}
+
+	for (const { aliasName, baseName } of aliases) {
+		// Find the base extension directory
+		const baseDir = findBaseDir(extensionsDir, loadedBases, baseName);
+		if (!baseDir) {
+			logger.warn(
+				{ alias: aliasName, base: baseName },
+				"alias references unknown base extension",
+			);
+			continue;
+		}
+
+		try {
+			const result = await loadExtension(baseDir, logger, aliasName);
+			if (result) {
+				// Override the extension's name with the alias name
+				result.ext.name = aliasName;
+				const ctx = getCtx(aliasName);
+				manager.register(result.ext, ctx);
+				logger.info(
+					{ alias: aliasName, base: baseName },
+					"loaded alias extension",
+				);
+			}
+		} catch (err) {
+			logger.error(
+				{ err, alias: aliasName, base: baseName },
+				"failed to load alias extension",
+			);
 		}
 	}
 }
@@ -118,6 +205,7 @@ export async function collectWorkspaceRequirements(
 async function loadExtension(
 	dir: string,
 	logger: Logger,
+	cacheKey?: string,
 ): Promise<{ ext: Extension; name: string } | null> {
 	const manifest = await loadManifest(dir, logger);
 	if (!manifest) return null;
@@ -129,7 +217,13 @@ async function loadExtension(
 	}
 
 	const entrypoint = manifest.entrypoint ?? "index.ts";
-	const entryPath = resolve(dir, entrypoint);
+	let entryPath = resolve(dir, entrypoint);
+
+	// Bust module cache for alias loads — each alias needs its own instance.
+	// Bun caches by URL, so appending a unique query param forces a fresh load.
+	if (cacheKey) {
+		entryPath = `${entryPath}?alias=${encodeURIComponent(cacheKey)}`;
+	}
 
 	// Dynamic import — Bun handles TS natively
 	const mod = (await import(entryPath)) as LoadedModule;
@@ -183,4 +277,23 @@ async function loadManifest(
 		logger.warn({ dir }, "no extension.json found");
 		return null;
 	}
+}
+
+/** Resolve the base extension directory for an alias.
+ *  Checks directory name match first, then manifest name match. */
+function findBaseDir(
+	extensionsDir: string,
+	loadedBases: Map<string, string>,
+	baseName: string,
+): string | null {
+	// Try directory name match
+	const dirPath = join(extensionsDir, baseName);
+	if (loadedBases.has(baseName)) return dirPath;
+
+	// Try manifest name match (dir might differ from manifest name)
+	for (const [dir, manifestName] of loadedBases) {
+		if (manifestName === baseName) return join(extensionsDir, dir);
+	}
+
+	return null;
 }

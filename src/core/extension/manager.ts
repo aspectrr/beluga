@@ -33,7 +33,19 @@ export class ExtensionManager {
 	async initAll(): Promise<void> {
 		for (const { ext, ctx } of this.extensions) {
 			this.logger.info({ extension: ext.name }, "initializing extension");
+			// Snapshot tool names before init so we can tag new ones
+			const beforeNames = new Set(ctx.registry.list().map((t) => t.name));
 			await ext.init(ctx);
+			// Re-register new tools with the extension name as source
+			const afterNames = ctx.registry.list().map((t) => t.name);
+			for (const name of afterNames) {
+				if (!beforeNames.has(name)) {
+					const tool = ctx.registry.get(name);
+					if (tool) {
+						ctx.registry.register(tool, ext.name);
+					}
+				}
+			}
 		}
 	}
 

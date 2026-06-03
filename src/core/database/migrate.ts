@@ -49,6 +49,9 @@ export async function runMigrations(db: DbType): Promise<void> {
 	await db.execute(sql`
 		CREATE INDEX IF NOT EXISTS events_type_idx ON events (session_id, type);
 	`);
+	// Drop the btree index from the initial Drizzle migration — btree can't index
+	// large jsonb values (>2704 bytes). Recreate as GIN which handles arbitrary size.
+	await db.execute(sql`DROP INDEX IF EXISTS events_data_idx`);
 	await db.execute(sql`
 		CREATE INDEX IF NOT EXISTS events_data_idx ON events USING gin (data);
 	`);

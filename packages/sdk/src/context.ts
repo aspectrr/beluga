@@ -57,6 +57,11 @@ export interface ExtensionContext {
 	/** Extension-specific config from beluga.yaml */
 	config: Record<string, unknown>;
 
+	/** Instance name for this extension. Same as extension name for base extensions.
+	 *  For aliases (e.g. `linear-acme` extending `linear`), this is the alias name.
+	 *  Use this to prefix tool names, webhook paths, etc. */
+	instanceName: string;
+
 	/** Tool registry — call ctx.registry.register(tool) to add tools */
 	registry: Registry;
 

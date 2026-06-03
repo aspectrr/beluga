@@ -58,6 +58,7 @@ export const events = pgTable(
 	(table) => [
 		uniqueIndex("events_session_seq_idx").on(table.sessionId, table.seq),
 		index("events_type_idx").on(table.sessionId, table.type),
-		index("events_data_idx").on(table.data),
+		// NOTE: events_data_idx is created as GIN in migrate.ts (not btree)
+		// Drizzle's .index() only supports btree, so it's omitted here.
 	],
 );

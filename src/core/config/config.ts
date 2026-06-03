@@ -25,7 +25,8 @@ export interface WorkspaceConfig {
 	dockerHost: string;
 	agentImage: string;
 	maxConcurrent: number;
-	idleTimeout: number; // seconds
+	idleTimeout: number; // seconds — containers are stopped (not removed) after this
+	retentionTimeout: number; // seconds — containers+volumes fully destroyed after this
 	cpuLimit: string;
 	memoryLimit: string;
 	networkMode: string;
@@ -33,6 +34,8 @@ export interface WorkspaceConfig {
 
 export interface ExtensionEntry {
 	enabled: boolean;
+	/** Base extension to load code from. Enables multi-instance aliases. */
+	extends?: string;
 	[key: string]: unknown;
 }
 
@@ -103,12 +106,27 @@ function parseConfig(raw: Record<string, unknown>): Config {
 	// Parse idle timeout (e.g. "1h" → 3600, "30s" → 30)
 	const idleTimeoutRaw = String(ws.idleTimeout ?? ws.idle_timeout ?? "1h");
 	let idleTimeout = 3600;
-	const match = idleTimeoutRaw.match(/^(\d+)(s|m|h)$/);
+	let match = idleTimeoutRaw.match(/^(\d+)(s|m|h|d)$/);
 	if (match) {
 		const n = parseInt(match[1]);
 		if (match[2] === "s") idleTimeout = n;
 		else if (match[2] === "m") idleTimeout = n * 60;
 		else if (match[2] === "h") idleTimeout = n * 3600;
+		else if (match[2] === "d") idleTimeout = n * 86400;
+	}
+
+	// Parse retention timeout (default 90d — fully destroy containers+volumes)
+	const retentionTimeoutRaw = String(
+		ws.retentionTimeout ?? ws.retention_timeout ?? "90d",
+	);
+	let retentionTimeout = 90 * 86400;
+	match = retentionTimeoutRaw.match(/^(\d+)(s|m|h|d)$/);
+	if (match) {
+		const n = parseInt(match[1]);
+		if (match[2] === "s") retentionTimeout = n;
+		else if (match[2] === "m") retentionTimeout = n * 60;
+		else if (match[2] === "h") retentionTimeout = n * 3600;
+		else if (match[2] === "d") retentionTimeout = n * 86400;
 	}
 
 	return {
@@ -143,6 +161,7 @@ function parseConfig(raw: Record<string, unknown>): Config {
 			),
 			maxConcurrent: Number(ws.maxConcurrent ?? ws.max_concurrent ?? 10),
 			idleTimeout,
+			retentionTimeout,
 			cpuLimit: String(ws.cpuLimit ?? ws.cpu_limit ?? "1.0"),
 			memoryLimit: String(ws.memoryLimit ?? ws.memory_limit ?? "1g"),
 			networkMode: String(ws.networkMode ?? ws.network_mode ?? "none"),
@@ -228,7 +247,9 @@ function parseRouting(raw: Record<string, unknown>): Record<string, string> {
 
 export function isExtensionEnabled(config: Config, name: string): boolean {
 	const ext = config.extensions[name];
-	return ext?.enabled === true;
+	// If not in config at all, default to enabled (base extension with only aliases)
+	if (!ext) return true;
+	return ext.enabled !== false;
 }
 
 export function extensionRawConfig(
@@ -245,6 +266,25 @@ export function enabledExtensions(config: Config): string[] {
 	return Object.entries(config.extensions)
 		.filter(([, v]) => v.enabled)
 		.map(([k]) => k);
+}
+
+/** Find all alias names that extend a given base extension. */
+export function extensionAliases(config: Config, baseName: string): string[] {
+	return Object.entries(config.extensions)
+		.filter(([, v]) => v.enabled && v.extends === baseName)
+		.map(([k]) => k);
+}
+
+/** Check if an extension name is an alias (has `extends` field). */
+export function isExtensionAlias(config: Config, name: string): boolean {
+	const ext = config.extensions[name];
+	return ext ? !!ext.extends : false;
+}
+
+/** Get the base extension name for an alias, or the name itself if not an alias. */
+export function extensionBaseName(config: Config, name: string): string {
+	const ext = config.extensions[name];
+	return ext?.extends ?? name;
 }
 
 // ── Agent config helpers ────────────────────────────────────────

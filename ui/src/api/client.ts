@@ -117,6 +117,14 @@ export const api = {
 			body: JSON.stringify({ message }),
 		}),
 
+	cancelSession: (sessionId: string) =>
+		json<{ cancelled: boolean }>(
+			`/sessions/${encodeURIComponent(sessionId)}/cancel`,
+			{
+				method: "POST",
+			},
+		),
+
 	// Events
 	getEvents: (sessionId: string) =>
 		json<Event[]>(`/sessions/${encodeURIComponent(sessionId)}/events`),

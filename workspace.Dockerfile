@@ -70,4 +70,6 @@ RUN mkdir -p /workspace && chmod 777 /workspace
 HEALTHCHECK --interval=30s --timeout=5s --retries=3 \
     CMD which python && which node && which bun || exit 1
 
-CMD ["/bin/bash"]
+# Keep container alive as a long-running target for docker exec.
+# /bin/bash exits immediately without a TTY; sleep infinity runs forever.
+CMD ["sleep", "infinity"]

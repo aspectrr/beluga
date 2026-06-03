@@ -2,7 +2,7 @@
 // Ported from cmd/beluga/main.go
 
 import { Command } from "commander";
-import pino from "pino";
+import pino, { type Logger } from "pino";
 import { resolve, join } from "path";
 import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
 
@@ -10,6 +10,7 @@ import { readFileSync, existsSync, mkdirSync, writeFileSync } from "fs";
 import {
   loadConfig,
   type Config,
+  isExtensionEnabled,
   enabledExtensions,
   extensionRawConfig,
   enabledAgents,
@@ -23,7 +24,8 @@ import { EventStore } from "./core/eventstore/store.js";
 import { SessionStore } from "./core/session/store.js";
 import { Registry, registerWorkspaceTools } from "./core/tools/index.js";
 import { registerPublishTools } from "./core/tools/publish.js";
-import { WorkspaceManager } from "./core/workspace/manager.js";
+import { registerSkillTools } from "./core/tools/skills.js";
+import { WorkspaceManager, ContainerNotRunningError } from "./core/workspace/manager.js";
 import {
   ExtensionManager,
   loadRuntimeExtensions,
@@ -33,7 +35,7 @@ import { ContextBuilder } from "./core/agent/context.js";
 import { Compactor } from "./core/agent/compactor.js";
 import { Orchestrator, type ToolExecutor } from "./core/agent/loop.js";
 import { SessionRouter } from "./core/agent/router.js";
-import { AgentRunner } from "./core/agent/runner.js";
+import { AgentRunner, type SkillIndex } from "./core/agent/runner.js";
 import { loadAgents, type LoadedAgent } from "./core/agent/loader.js";
 import type { ResolvedAgent } from "@aspectrr/beluga-sdk";
 import { ProviderModelCache } from "./core/model/cache.js";
@@ -50,6 +52,7 @@ import { removeAgent } from "./cli/agent/remove.js";
 import { buildWorkspace } from "./core/workspace/builder.js";
 
 const logger = pino({
+  level: process.env.LOG_LEVEL || "debug",
   transport: {
     target: "pino-pretty",
     options: { colorize: true },
@@ -62,16 +65,19 @@ const logger = pino({
 class ToolExecutorAdapter implements ToolExecutor {
   private registry: Registry;
   private workspaceManager: WorkspaceManager;
+  private logger: Logger;
   agent: string;
 
   constructor(
     registry: Registry,
     workspaceManager: WorkspaceManager,
     agent: string,
+    logger: Logger,
   ) {
     this.registry = registry;
     this.workspaceManager = workspaceManager;
     this.agent = agent;
+    this.logger = logger;
   }
 
   async executeTool(
@@ -81,17 +87,43 @@ class ToolExecutorAdapter implements ToolExecutor {
   ): Promise<Record<string, unknown>> {
     let sandbox = this.workspaceManager.get(sessionId) ?? null;
 
-    // Auto-create sandbox for workspace tool calls
-    if (!sandbox && name.startsWith("workspace_")) {
+    this.logger.debug({ sessionId, tool: name, hasSandbox: !!sandbox }, "executeTool: checking sandbox");
+
+    // Auto-create sandbox for any tool call (triggers onWorkspaceReady hooks)
+    if (!sandbox) {
+      this.logger.debug({ sessionId, tool: name }, "executeTool: creating workspace");
       sandbox = await this.workspaceManager.create(sessionId);
+      this.logger.debug({ sessionId, tool: name, created: !!sandbox }, "executeTool: workspace created");
     }
 
-    return this.registry.execute(name, args, {
-      sessionId,
-      sandbox,
-      eventStore: null,
-      agent: this.agent,
-    });
+    try {
+      return await this.registry.execute(name, args, {
+        sessionId,
+        sandbox,
+        eventStore: null,
+        agent: this.agent,
+      });
+    } catch (err) {
+      // If the container died mid-session, remove stale ref and let
+      // create() recover — the Docker volume preserves all workspace data.
+      if (err instanceof ContainerNotRunningError) {
+        this.logger.warn(
+          { sessionId, tool: name, containerId: sandbox?.id },
+          "container not running, removing stale ref and recovering",
+        );
+        // Remove stale in-memory ref (don't destroy — volume must survive)
+        this.workspaceManager.removeSandboxRef(sessionId);
+        // create() will find the volume and create a fresh container with it
+        sandbox = await this.workspaceManager.create(sessionId);
+        return await this.registry.execute(name, args, {
+          sessionId,
+          sandbox,
+          eventStore: null,
+          agent: this.agent,
+        });
+      }
+      throw err;
+    }
   }
 }
 
@@ -150,12 +182,16 @@ async function startCommand(configPath: string): Promise<void> {
       dockerHost: config.workspace.dockerHost,
       agentImage: config.workspace.agentImage,
       idleTimeout: config.workspace.idleTimeout,
+      retentionTimeout: config.workspace.retentionTimeout,
       cpuLimit: config.workspace.cpuLimit,
       memoryLimit: config.workspace.memoryLimit,
       networkMode: config.workspace.networkMode,
     },
     logger,
   );
+
+  // 5.1. Recover workspace containers from previous daemon runs
+  await workspaceManager.recoverFromDocker();
 
   // 6. Load agents
   const agentsDir = join(belugaDir, "agents");
@@ -179,19 +215,22 @@ async function startCommand(configPath: string): Promise<void> {
   // 7. Resolve all agents (merge manifests with global config)
   const agentRunner = new AgentRunner(config, logger);
   const resolvedAgents = new Map<string, ResolvedAgent>();
+  const agentSkills = new Map<string, SkillIndex[]>();
 
   for (const loaded of loadedAgents) {
     if (!isAgentEnabled(config, loaded.name)) {
       logger.info({ agent: loaded.name }, "agent disabled, skipping");
       continue;
     }
-    const resolved = await agentRunner.resolve(loaded.manifest, loaded.dir);
+    const { agent: resolved, skills } = await agentRunner.resolve(loaded.manifest, loaded.dir);
     resolvedAgents.set(loaded.name, resolved);
+    agentSkills.set(loaded.name, skills);
     logger.info(
       {
         agent: resolved.name,
         extensions: resolved.extensions,
         model: resolved.model.model,
+        skills: skills.map((s) => s.name),
       },
       "agent resolved",
     );
@@ -247,6 +286,17 @@ async function startCommand(configPath: string): Promise<void> {
     const agentRegistry = new Registry();
     registerWorkspaceTools(agentRegistry);
 
+    // Add skill loading tool for this agent
+    const skills = agentSkills.get(agentName) ?? [];
+    registerSkillTools(agentRegistry, skills);
+
+    if (skills.length > 0) {
+      logger.info(
+        { agent: agentName, skills: skills.map((s) => s.name) },
+        "registered skill tool with available skills",
+      );
+    }
+
     // Add publish tools scoped to this agent
     registerPublishTools(agentRegistry, {
       callingAgent: agentName,
@@ -260,15 +310,16 @@ async function startCommand(configPath: string): Promise<void> {
       // workspace_* and publish_* tools are already registered above
       if (
         toolDef.name.startsWith("workspace_") ||
-        toolDef.name.startsWith("publish_")
+        toolDef.name.startsWith("publish_") ||
+        toolDef.name.startsWith("load_")
       ) {
         continue;
       }
 
-      // Include tool if it comes from an extension this agent has
-      const toolPrefix = toolDef.name.split("_")[0];
+      // Check if this tool was registered by an extension this agent uses
+      const source = globalRegistry.getSource(toolDef.name);
       if (
-        resolved.extensions.includes(toolPrefix) ||
+        (source && resolved.extensions.includes(source)) ||
         resolved.extensions.length === 0
       ) {
         const tool = globalRegistry.get(toolDef.name);
@@ -290,6 +341,7 @@ async function startCommand(configPath: string): Promise<void> {
       agentRegistry,
       workspaceManager,
       resolved.name,
+      logger.child({ agent: agentName }),
     );
     const orchestrator = new Orchestrator(
       sessionStore,
@@ -313,10 +365,11 @@ async function startCommand(configPath: string): Promise<void> {
     logger.info(
       {
         agent: agentName,
-        tools: agentRegistry.list().length,
+        tools: agentRegistry.list().map((t) => t.name),
         model: resolved.model.model,
         contextWindow,
         maxIterations: resolved.maxIterations || Infinity,
+        skills: skills.map((s) => s.name),
       },
       "orchestrator built for agent",
     );
@@ -328,6 +381,18 @@ async function startCommand(configPath: string): Promise<void> {
   const router = new SessionRouter(config, logger);
 
   // Session creation — routes to the correct agent
+  const cancelSession = async (
+    sessionId: string,
+  ): Promise<boolean> => {
+    const session = await sessionStore.get(sessionId);
+    if (!session) throw new Error(`session not found: ${sessionId}`);
+    const agentName =
+      (session?.metadata?.agent as string) ?? router.resolve("default");
+    const entry = await getOrchestrator(agentName);
+    if (!entry) throw new Error(`no orchestrator for agent: ${agentName}`);
+    return entry.orchestrator.cancel(sessionId);
+  };
+
   const createSession = async (
     source: string,
     sourceId: string,
@@ -375,6 +440,7 @@ async function startCommand(configPath: string): Promise<void> {
     extMgr,
     (name: string) => ({
       config: extensionRawConfig(config, name),
+      instanceName: name,
       registry: globalRegistry,
       sessions: sessionStore,
       events: eventStore,
@@ -386,6 +452,8 @@ async function startCommand(configPath: string): Promise<void> {
       shared,
     }),
     logger,
+    (name: string) => isExtensionEnabled(config, name),
+    () => config,
   );
 
   // Initialize extensions
@@ -606,6 +674,16 @@ async function startCommand(configPath: string): Promise<void> {
     });
   });
 
+  app.post("/api/sessions/:id/cancel", async (c) => {
+    const sessionId = c.req.param("id");
+    try {
+      const cancelled = await cancelSession(sessionId);
+      return c.json({ cancelled });
+    } catch (err) {
+      return c.json({ error: err instanceof Error ? err.message : "Unknown error" }, 400);
+    }
+  });
+
   app.post("/api/sessions/:id/messages", async (c) => {
     const sessionId = c.req.param("id");
     const body = await c.req.json();
@@ -752,6 +830,7 @@ async function persistConfig(configPath: string, config: Config): Promise<void> 
       cpuLimit: config.workspace.cpuLimit,
       memoryLimit: config.workspace.memoryLimit,
       idleTimeout: `${config.workspace.idleTimeout / 3600}h`,
+      retentionTimeout: `${Math.round(config.workspace.retentionTimeout / 86400)}d`,
       networkMode: config.workspace.networkMode,
     },
     extensions: config.extensions,
@@ -781,7 +860,7 @@ async function onboardCommand(): Promise<void> {
   const belugaDir = ".beluga";
   mkdirSync(join(belugaDir, "prompts"), { recursive: true });
   mkdirSync(join(belugaDir, "extensions"), { recursive: true });
-  mkdirSync(join(belugaDir, "agents", "default"), { recursive: true });
+  mkdirSync(join(belugaDir, "agents", "default", "skills"), { recursive: true });
 
   // Config
   const configPath = join(belugaDir, "config.json");
@@ -824,29 +903,35 @@ async function onboardCommand(): Promise<void> {
     console.log(`${configPath} already exists`);
   }
 
-  // Default system prompt (legacy location for backward compat)
+  // Default system prompt template (used as base for new agents)
   const promptPath = join(belugaDir, "prompts", "SYSTEM.md");
-  if (!existsSync(promptPath)) {
-    writeFileSync(
-      promptPath,
-      `# Beluga Agent
+  const systemPromptContent = `# Beluga Agent
 
 You are Beluga, an AI agent that helps users manage tasks and projects.
 You have access to tools in a workspace sandbox and can interact with external services via extensions.
 Always respond concisely and accurately.
-`,
-    );
+
+## Skills
+
+Check the Available Skills section below. When a user's task matches a skill, call \`load_skill\` with that skill's name BEFORE taking any other action. Follow the skill's instructions exactly — they contain site-specific workflows and pitfall avoidance.
+`;
+
+  if (!existsSync(promptPath)) {
+    writeFileSync(promptPath, systemPromptContent);
     console.log(`✓ created ${promptPath}`);
   }
 
   // Default agent manifest
-  const defaultAgentManifest = join(
-    belugaDir,
-    "agents",
-    "default",
-    "agent.json",
-  );
+  const defaultAgentDir = join(belugaDir, "agents", "default");
+  const defaultAgentManifest = join(defaultAgentDir, "agent.json");
   if (!existsSync(defaultAgentManifest)) {
+    // Clone system prompt into agent directory
+    const agentPromptPath = join(defaultAgentDir, "SYSTEM.md");
+    if (!existsSync(agentPromptPath)) {
+      writeFileSync(agentPromptPath, systemPromptContent);
+      console.log(`✓ created ${agentPromptPath}`);
+    }
+
     writeFileSync(
       defaultAgentManifest,
       JSON.stringify(
@@ -854,7 +939,7 @@ Always respond concisely and accurately.
           name: "default",
           version: "0.1.0",
           description: "Default Beluga agent",
-          systemPrompt: "../../prompts/SYSTEM.md",
+          systemPrompt: "SYSTEM.md",
           extensions: [],
         },
         null,

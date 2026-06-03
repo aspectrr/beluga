@@ -48,14 +48,18 @@ function scaffoldBlank(name: string, dir: string): void {
 		JSON.stringify(manifest, null, 2) + "\n",
 	);
 
-	writeFileSync(
-		join(dir, "SYSTEM.md"),
-		`# ${name}
-
-You are a specialized Beluga agent.
-Edit this file to customize your behavior and personality.
-`,
-	);
+	// Clone system prompt from prompts/SYSTEM.md template if it exists
+	const templatePath = resolve(".beluga", "prompts", "SYSTEM.md");
+	if (existsSync(templatePath)) {
+		const template = readFileSync(templatePath, "utf-8");
+		writeFileSync(join(dir, "SYSTEM.md"), template);
+		console.log(`  cloned prompts/SYSTEM.md → ${name}/SYSTEM.md`);
+	} else {
+		writeFileSync(
+			join(dir, "SYSTEM.md"),
+			`# ${name}\n\nYou are a specialized Beluga agent.\nEdit this file to customize your behavior and personality.\n`,
+		);
+	}
 }
 
 function scaffoldFromTemplate(

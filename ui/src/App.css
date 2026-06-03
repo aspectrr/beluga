@@ -216,14 +216,40 @@ textarea {
 	color: var(--warn);
 }
 
-/* Chat */
-.chat-container {
+/* Chat Header */
+.chat-header {
+	display: flex;
+	justify-content: space-between;
+	align-items: center;
+	margin-bottom: 16px;
+}
+.chat-header-actions {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+.chat-agent-info {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+}
+.chat-agent-label {
+	font-size: 13px;
+	color: var(--text-dim);
+}
+.chat-agent-model {
+	font-size: 11px;
+	color: var(--text-dim);
+}
+
+/* ── assistant-ui Thread ─────────────────────────────────────── */
+.aui-thread-root {
 	display: flex;
 	flex-direction: column;
 	height: calc(100vh - 140px);
 }
 
-.chat-messages {
+.aui-thread-viewport {
 	flex: 1;
 	overflow-y: auto;
 	padding: 16px;
@@ -233,41 +259,323 @@ textarea {
 	margin-bottom: 12px;
 }
 
-.chat-message {
+/* Welcome */
+.aui-thread-welcome {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	padding: 60px 20px;
+	text-align: center;
+}
+.aui-thread-welcome-icon {
+	font-size: 48px;
 	margin-bottom: 12px;
 }
-.chat-message.user {
-	text-align: right;
-}
-.chat-message .msg-content {
-	display: inline-block;
-	max-width: 70%;
-	padding: 8px 14px;
-	border-radius: 12px;
-	text-align: left;
-	white-space: pre-wrap;
-	font-size: 14px;
-}
-.chat-message.user .msg-content {
-	background: var(--accent);
-	color: #fff;
-}
-.chat-message.agent .msg-content {
-	background: var(--border);
-	color: var(--text);
-}
-.chat-message .msg-meta {
-	font-size: 11px;
+.aui-thread-welcome-msg {
 	color: var(--text-dim);
-	margin-top: 2px;
+	font-size: 15px;
 }
 
-.chat-input-row {
+/* Messages */
+.aui-msg {
+	margin-bottom: 16px;
+}
+.aui-msg-row {
 	display: flex;
+	align-items: flex-start;
 	gap: 8px;
 }
-.chat-input-row input {
+.aui-msg-row-user {
+	justify-content: flex-end;
+}
+.aui-msg-row-assistant {
+	justify-content: flex-start;
+}
+.aui-msg-avatar {
+	width: 28px;
+	height: 28px;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border-radius: 50%;
+	background: var(--border);
+	font-size: 14px;
+	flex-shrink: 0;
+}
+.aui-msg-content {
+	max-width: 70%;
+	padding: 10px 14px;
+	border-radius: 12px;
+	white-space: pre-wrap;
+	font-size: 14px;
+	line-height: 1.5;
+}
+.aui-msg-content-user {
+	background: var(--accent);
+	color: #fff;
+	border-bottom-right-radius: 4px;
+}
+.aui-msg-content-assistant {
+	background: var(--border);
+	color: var(--text);
+	border-bottom-left-radius: 4px;
+}
+
+/* Typing indicator */
+.aui-typing-indicator {
+	display: flex;
+	gap: 4px;
+	padding: 8px 14px;
+}
+.aui-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	background: var(--text-dim);
+	animation: aui-bounce 1.2s infinite;
+}
+.aui-dot:nth-child(2) {
+	animation-delay: 0.2s;
+}
+.aui-dot:nth-child(3) {
+	animation-delay: 0.4s;
+}
+@keyframes aui-bounce {
+	0%,
+	60%,
+	100% {
+		transform: translateY(0);
+		opacity: 0.4;
+	}
+	30% {
+		transform: translateY(-6px);
+		opacity: 1;
+	}
+}
+
+/* Composer */
+.aui-composer-area {
+	position: relative;
+}
+.aui-composer-wrapper {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+}
+.aui-composer {
+	display: flex;
+	gap: 8px;
 	flex: 1;
+	align-items: center;
+}
+.aui-composer-input {
+	flex: 1;
+	padding: 10px 14px;
+	background: var(--bg);
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	color: var(--text);
+	font-size: 14px;
+	font-family: inherit;
+	resize: none;
+	min-height: 42px;
+	max-height: 120px;
+}
+.aui-composer-input:focus {
+	outline: none;
+	border-color: var(--accent);
+}
+.aui-composer-input::placeholder {
+	color: var(--text-dim);
+}
+.aui-composer-send {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px 18px;
+	background: var(--accent);
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+.aui-composer-send:hover {
+	background: var(--accent-hover);
+}
+.aui-composer-send:disabled {
+	opacity: 0.5;
+	cursor: not-allowed;
+}
+.aui-composer-stop {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 10px 18px;
+	background: var(--danger, #e53e3e);
+	color: #fff;
+	border: none;
+	border-radius: 8px;
+	font-size: 14px;
+	font-weight: 500;
+	cursor: pointer;
+	transition: background 0.15s;
+}
+.aui-composer-stop:hover {
+	opacity: 0.85;
+}
+.aui-new-chat-btn {
+	white-space: nowrap;
+}
+
+/* Scroll to bottom */
+.aui-scroll-btn {
+	position: absolute;
+	bottom: calc(100% + 8px);
+	right: 16px;
+	width: 32px;
+	height: 32px;
+	border-radius: 50%;
+	background: var(--surface);
+	border: 1px solid var(--border);
+	color: var(--text-dim);
+	cursor: pointer;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	font-size: 14px;
+	transition: all 0.15s;
+	z-index: 10;
+}
+.aui-scroll-btn:hover {
+	border-color: var(--accent);
+	color: var(--text);
+}
+
+/* ── Tool Call Display ──────────────────────────────────────── */
+.aui-tool-call {
+	margin: 6px 0;
+	border: 1px solid var(--border);
+	border-radius: 8px;
+	overflow: hidden;
+	font-size: 13px;
+}
+.aui-tool-call-header {
+	display: flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 12px;
+	background: rgba(88, 166, 255, 0.06);
+	border-bottom: 1px solid var(--border);
+}
+.aui-tool-call-icon {
+	font-size: 14px;
+}
+.aui-tool-call-name {
+	font-weight: 600;
+	color: var(--accent);
+	font-family: "SF Mono", "Fira Code", monospace;
+	font-size: 12px;
+}
+.aui-tool-call-status {
+	margin-left: auto;
+	font-size: 11px;
+	color: var(--text-dim);
+	padding: 1px 8px;
+	border-radius: 10px;
+	background: var(--border);
+}
+.aui-tool-call-status.aui-tool-call-error {
+	background: rgba(248, 81, 73, 0.15);
+	color: var(--danger);
+}
+.aui-tool-call-status.aui-tool-call-done {
+	background: rgba(63, 185, 80, 0.15);
+	color: var(--success);
+}
+.aui-tool-call-body,
+.aui-tool-call-section {
+	border-top: 1px solid var(--border);
+}
+.aui-tool-call-section:first-child {
+	border-top: none;
+}
+.aui-tool-call-label {
+	display: block;
+	font-size: 10px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.5px;
+	color: var(--text-dim);
+	padding: 6px 12px 2px;
+}
+.aui-tool-call-pre {
+	padding: 4px 12px 8px;
+	margin: 0;
+	font-family: "SF Mono", "Fira Code", monospace;
+	font-size: 11px;
+	color: var(--text);
+	white-space: pre-wrap;
+	word-break: break-all;
+	max-height: 200px;
+	overflow-y: auto;
+}
+.aui-tool-call-result {
+	color: var(--success);
+}
+
+/* ── Action Bar ─────────────────────────────────────────────── */
+.aui-action-bar {
+	display: flex;
+	gap: 2px;
+	opacity: 0;
+	transition: opacity 0.15s;
+}
+.aui-msg:hover .aui-action-bar {
+	opacity: 1;
+}
+.aui-action-btn {
+	background: none;
+	border: none;
+	cursor: pointer;
+	padding: 4px 6px;
+	border-radius: 4px;
+	font-size: 13px;
+	opacity: 0.5;
+	transition:
+		opacity 0.15s,
+		background 0.15s;
+}
+.aui-action-btn:hover {
+	opacity: 1;
+	background: var(--border);
+}
+
+/* ── Welcome Suggestions ────────────────────────────────────── */
+.aui-thread-welcome-suggestions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: center;
+	margin-top: 20px;
+}
+.aui-suggestion {
+	background: var(--surface);
+	border: 1px solid var(--border);
+	border-radius: 20px;
+	padding: 8px 16px;
+	font-size: 13px;
+	color: var(--text-dim);
+	cursor: pointer;
+	transition: all 0.15s;
+}
+.aui-suggestion:hover {
+	border-color: var(--accent);
+	color: var(--text);
+	background: rgba(88, 166, 255, 0.08);
 }
 
 /* Logs */

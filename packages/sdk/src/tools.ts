@@ -37,9 +37,12 @@ export interface Tool {
 
 export class Registry {
 	private tools: Map<string, Tool> = new Map();
+	/** Maps tool name → extension name that registered it. */
+	private sources: Map<string, string> = new Map();
 
-	register(tool: Tool): void {
+	register(tool: Tool, source?: string): void {
 		this.tools.set(tool.definition().name, tool);
+		if (source) this.sources.set(tool.definition().name, source);
 	}
 
 	get(name: string): Tool | undefined {
@@ -48,6 +51,11 @@ export class Registry {
 
 	list(): ToolDef[] {
 		return Array.from(this.tools.values()).map((t) => t.definition());
+	}
+
+	/** Get the extension name that registered a tool, or undefined for core tools. */
+	getSource(name: string): string | undefined {
+		return this.sources.get(name);
 	}
 
 	async execute(
@@ -62,6 +70,7 @@ export class Registry {
 
 	unregister(name: string): void {
 		this.tools.delete(name);
+		this.sources.delete(name);
 	}
 }
 

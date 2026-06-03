@@ -30,6 +30,7 @@ export class Orchestrator {
 	private logger: Logger;
 	private tools: ToolDef[] = [];
 	private maxIterations: number;
+	private abortControllers = new Map<string, AbortController>();
 
 	constructor(
 		sessions: SessionStore,
@@ -145,16 +146,33 @@ export class Orchestrator {
 			to: "running",
 		});
 
+		// Register abort controller for this session
+		const ac = new AbortController();
+		this.abortControllers.set(sessionId, ac);
+
 		this.logger.info({ sessionId }, "agent loop started");
 
-		const maxIter = this.maxIterations || Infinity;
-		for (let i = 0; i < maxIter; i++) {
-			const result = await this.runIteration(sessionId);
-			if (result === "done") break;
+		try {
+			const maxIter = this.maxIterations || Infinity;
+			for (let i = 0; i < maxIter; i++) {
+				if (ac.signal.aborted) {
+					this.logger.info({ sessionId, iteration: i }, "agent loop aborted");
+					break;
+				}
+				const result = await this.runIteration(sessionId, ac.signal);
+				if (result === "done") break;
+			}
+		} finally {
+			this.abortControllers.delete(sessionId);
 		}
 	}
 
-	private async runIteration(sessionId: string): Promise<"continue" | "done"> {
+	private async runIteration(
+		sessionId: string,
+		signal: AbortSignal,
+	): Promise<"continue" | "done" | "aborted"> {
+		if (signal.aborted) return "aborted";
+
 		// Fetch all events
 		const allEvents = await this.events.getEvents(sessionId, 0, 10000);
 
@@ -166,6 +184,8 @@ export class Orchestrator {
 			await this.compactor.compact(sessionId, allEvents);
 		}
 
+		if (signal.aborted) return "aborted";
+
 		// Build LLM tool definitions
 		const { toLLMTools } = await import("../tools/registry.js");
 		const llmTools = this.tools.length > 0 ? toLLMTools(this.tools) : undefined;
@@ -176,6 +196,8 @@ export class Orchestrator {
 			tools: llmTools,
 		});
 
+		if (signal.aborted) return "aborted";
+
 		const choice = response.choices[0];
 		if (!choice) {
 			await this.terminate(sessionId, true);
@@ -185,8 +207,14 @@ export class Orchestrator {
 		// Handle tool calls
 		if (choice.message.tool_calls && choice.message.tool_calls.length > 0) {
 			for (const tc of choice.message.tool_calls) {
+				if (signal.aborted) return "aborted";
+
 				// Record tool_call event
 				const args = JSON.parse(tc.function.arguments);
+				this.logger.debug(
+					{ sessionId, tool: tc.function.name, args },
+					"tool call",
+				);
 				await this.events.append(sessionId, "tool_call", {
 					tool_name: tc.function.name,
 					args,
@@ -200,6 +228,10 @@ export class Orchestrator {
 						args,
 						sessionId,
 					);
+					this.logger.debug(
+						{ sessionId, tool: tc.function.name, result },
+						"tool result",
+					);
 
 					await this.events.append(sessionId, "tool_result", {
 						call_id: tc.id,
@@ -207,6 +239,10 @@ export class Orchestrator {
 						is_error: false,
 					});
 				} catch (err) {
+					this.logger.error(
+						{ sessionId, tool: tc.function.name, err },
+						"tool error",
+					);
 					await this.events.append(sessionId, "tool_result", {
 						call_id: tc.id,
 						output: String(err instanceof Error ? err.message : err),
@@ -217,10 +253,22 @@ export class Orchestrator {
 			return "continue";
 		}
 
-		// Handle content response
+		// Handle content response — ALWAYS emit agent_message
 		if (choice.message.content) {
 			await this.events.append(sessionId, "agent_message", {
 				content: choice.message.content,
+				model: this.llm.model,
+				usage: this.llm.lastUsage,
+			});
+		} else {
+			// LLM returned empty content with no tool calls — send fallback so user gets a response
+			this.logger.warn(
+				{ sessionId, finishReason: choice.finish_reason },
+				"LLM returned empty content, sending fallback message",
+			);
+			await this.events.append(sessionId, "agent_message", {
+				content:
+					"I encountered an issue processing your request. Please try again.",
 				model: this.llm.model,
 				usage: this.llm.lastUsage,
 			});
@@ -242,7 +290,29 @@ export class Orchestrator {
 		return "done";
 	}
 
+	/** Cancel a running agent loop. */
+	async cancel(sessionId: string): Promise<boolean> {
+		const ac = this.abortControllers.get(sessionId);
+		if (!ac) return false;
+
+		ac.abort();
+		this.abortControllers.delete(sessionId);
+
+		await this.sessions.updateStatus(sessionId, "completed");
+		await this.events.append(sessionId, "status_transition", {
+			from: "running",
+			to: "completed",
+			reason: "cancelled by user",
+		});
+
+		this.logger.info({ sessionId }, "agent loop cancelled by user");
+		return true;
+	}
+
 	async interrupt(sessionId: string): Promise<void> {
+		const ac = this.abortControllers.get(sessionId);
+		if (ac) ac.abort();
+
 		await this.sessions.updateStatus(sessionId, "suspended");
 		await this.events.append(sessionId, "interrupt", {
 			reason: "user requested interrupt",

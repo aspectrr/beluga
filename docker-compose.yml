@@ -10,6 +10,7 @@
 #   4. Stop everything:   docker compose down
 #
 # Beluga exposes HTTP on :8080 (health, webhooks).
+# Extension webhook listeners may use additional ports (e.g. :3099 for Linear).
 
 services:
   # ── PostgreSQL ─────────────────────────────────────────────
@@ -40,6 +41,7 @@ services:
     container_name: beluga-daemon
     ports:
       - "8081:8080"
+      - "3099:3099"
     depends_on:
       postgres:
         condition: service_healthy
@@ -58,6 +60,8 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ./.beluga/config.json:/etc/beluga/config.json
       - ./.beluga/extensions:/etc/beluga/extensions
+      - ./.beluga/agents:/etc/beluga/agents
+      - ./.beluga/prompts:/etc/beluga/prompts
       - ./.beluga/data:/var/lib/beluga
       - ./workspace.Dockerfile:/etc/beluga/workspace.Dockerfile:ro
     networks:
